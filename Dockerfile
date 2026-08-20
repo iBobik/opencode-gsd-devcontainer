@@ -2,7 +2,7 @@
 #
 # Bundles: opencode + PPQ provider and council plugins (live models, pricing, and
 # read-only multi-model synthesis) +
-# GSD-Core (full spec-driven loop, 6-model review, 6-pillar UI audit) +
+# GSD-Core (full spec-driven loop and 6-pillar UI audit) +
 # agent-browser (with the dogfood skill) + Chromium + playwright + tmux.
 #
 # Consuming projects do `FROM opencode-gsd-devcontainer:local` and add only their
@@ -53,17 +53,23 @@ COPY --chown=node:node opencode-global.json /home/node/.config/opencode/opencode
 COPY --chown=node:node opencode-ppq-plugin/plugin/opencode-ppq.ts /home/node/.config/opencode/plugins/
 COPY --chown=node:node opencode-council-plugin/plugin/opencode-council.ts /home/node/.config/opencode/plugins/
 
-# GSD defaults copied BEFORE the gsd-core install so `model_overrides` bake into
-# each agent's frontmatter at install time.
-COPY --chown=node:node gsd-defaults.json /home/node/.gsd/defaults.json
-
 # Chromium wrapper for gsd-browser (see GSD_BROWSER_BROWSER_PATH above).
 COPY --chown=node:node chromium-wrapper.sh /home/node/.gsd-browser/chromium-wrapper.sh
 RUN chmod +x /home/node/.gsd-browser/chromium-wrapper.sh
 
-# Test of OpenCode + PPQ is installed correctly
-# Also installs the config dir's own deps (plugin runtime + types) so opencode's first start is faster.
-RUN opencode models ppq
+# Installation smoke checks. Authenticated workflows are covered by plugin tests,
+# not image construction.
+RUN opencode --version \
+    && opencode models ppq \
+    && agent-browser --version \
+    && playwright --version \
+    && gsd-browser --version \
+    && gsd --version \
+    && gsd-core --help > /dev/null \
+    && chromium --version \
+    && tmux -V \
+    && command -v tinfoil-proxy \
+    && /home/node/.gsd-browser/chromium-wrapper.sh --headless --no-sandbox --disable-gpu --dump-dom about:blank | grep -q '<html>'
 
 # GSD-Core full profile.
 # `--portable-hooks` makes the hooks work inside Docker.
