@@ -36,10 +36,6 @@
 	"workspaceFolder": "/workspace",
 	"workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
 
-	// Load PPQ_API_KEY (and any other vars) from .env into the container env so
-	// opencode's "{env:PPQ_API_KEY}" resolves. .env lives at the repo root.
-	"runArgs": ["--env-file", "${localWorkspaceFolder}/.env"],
-
 	// Point opencode at this repo's config; persist opencode data inside the
 	// workspace so auth/sessions survive rebuilds.
 	"containerEnv": {
