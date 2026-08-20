@@ -1,0 +1,14 @@
+.git/
+.github/
+.devcontainer/
+.devcontainer/data/
+.env
+.DS_Store
+**/.DS_Store
+**/node_modules/
+**/*.cache.json
+gsd-council/
+model-curator/
+README.md
+TODO.md
+template/

@@ -1,0 +1,205 @@
+/**
+ * Universal, read-only multi-model council for OpenCode.
+ *
+ * The plugin creates a hidden orchestrator and one hidden, model-pinned member
+ * agent per configured council member. The orchestrator uses OpenCode's native
+ * Task tool, so member calls can run concurrently without external processes.
+ */
+
+import type { Plugin } from "@opencode-ai/plugin"
+import { promises as fs } from "node:fs"
+import * as path from "node:path"
+import * as os from "node:os"
+
+type Member = {
+  name: string
+  model: string
+}
+
+type CouncilConfig = {
+  members: Member[]
+  minimum_successful_members: number
+  allow_web: boolean
+}
+
+const DEFAULT_CONFIG: CouncilConfig = {
+  members: [
+    { name: "claude", model: "ppq/claude-fable-5" },
+    { name: "gpt", model: "ppq/gpt-5.6-sol" },
+    { name: "gemini", model: "ppq/~google/gemini-pro-latest" },
+    { name: "qwen", model: "ppq/qwen/qwen3.8-max" },
+    { name: "kimi", model: "ppq/moonshotai/kimi-k3" },
+    { name: "glm", model: "ppq/glm-5.2" },
+    { name: "grok", model: "ppq/grok-4.5" },
+  ],
+  minimum_successful_members: 2,
+  allow_web: true,
+}
+
+const CONFIG_NAME = "council.json"
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function normalizeMembers(value: unknown): Member[] | undefined {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 12) return undefined
+  const names = new Set<string>()
+  const models = new Set<string>()
+  const members: Member[] = []
+
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.name !== "string" || typeof item.model !== "string") return undefined
+    const name = item.name.trim()
+    const model = item.model.trim()
+    if (!/^[a-z0-9][a-z0-9-]*$/i.test(name) || !/^[^/\s]+\/.+/.test(model)) return undefined
+    const agentName = name.toLowerCase()
+    if (names.has(agentName) || models.has(model)) return undefined
+    names.add(agentName)
+    models.add(model)
+    members.push({ name, model })
+  }
+  return members
+}
+
+function mergeConfig(base: CouncilConfig, value: unknown): CouncilConfig | undefined {
+  if (!isRecord(value)) return undefined
+  const membersOverridden = value.members !== undefined
+  const members = membersOverridden ? normalizeMembers(value.members) : base.members
+  if (!members) return undefined
+  const minimum = value.minimum_successful_members === undefined
+    ? (membersOverridden ? Math.min(base.minimum_successful_members, members.length) : base.minimum_successful_members)
+    : value.minimum_successful_members
+  const allowWeb = value.allow_web === undefined ? base.allow_web : value.allow_web
+
+  if (!Number.isInteger(minimum) || minimum < 1 || minimum > members.length || typeof allowWeb !== "boolean") {
+    return undefined
+  }
+  return { members, minimum_successful_members: minimum, allow_web: allowWeb }
+}
+
+async function readConfig(file: string, base: CouncilConfig): Promise<CouncilConfig> {
+  let contents: string
+  try {
+    contents = await fs.readFile(file, "utf8")
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`[council] Could not read configuration ${file}: ${message}`)
+    }
+    return base
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(contents)
+    const merged = mergeConfig(base, parsed)
+    if (merged) return merged
+    console.warn(`[council] Ignoring invalid configuration ${file}: expected 1-12 uniquely named members, a valid quorum, and boolean allow_web`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[council] Could not parse configuration ${file}: ${message}`)
+  }
+  return base
+}
+
+function memberAgentName(name: string): string {
+  return `council-member-${name.toLowerCase()}`
+}
+
+function memberPrompt(member: Member): string {
+  return `You are council member ${member.name} (${member.model}). Work independently on the user request supplied by the council orchestrator.
+
+You are read-only. Inspect local files or web sources only when they materially help answer the request. Do not modify files, run shell commands, delegate work, or ask the user questions.
+
+Return a concise, self-contained analysis. Clearly distinguish facts, assumptions, risks, and recommendations. Cite file paths and line numbers, URLs, or other evidence when available. State material uncertainty rather than inventing evidence. Do not try to predict or conform to other council members.`
+}
+
+function orchestratorPrompt(members: Member[], minimum: number): string {
+  const agents = members.map((member) => `- ${memberAgentName(member.name)} (${member.model})`).join("\n")
+  return `You are the hidden orchestrator for a multi-model council. The command input contains a user request. Turn it into one self-contained task prompt, including any relevant context supplied in the command, then send that exact prompt to every council member below.
+
+Council members:
+${agents}
+
+Use the Task tool to invoke every member in ONE assistant message so OpenCode runs them in parallel. Do not delegate to any agent outside this list. Wait for all foreground results before responding.
+
+Compile the member responses into a direct answer. Prefer evidence and sound reasoning over majority count. Label a point as consensus only when at least ${minimum} successful members independently support it. This is a synthesis policy, not a completion gate: if fewer members succeed, respond with the available evidence and clearly state that the quorum was not met. Surface material disagreements, unique high-value observations, uncertainty, and failed members. Adapt the format to the request: severity-ordered findings for code review, steps and tradeoffs for plans, evidence and confidence for research, and concise recommendations for general questions. Never fabricate an absent member response.`
+}
+
+function memberPermission(allowWeb: boolean): Record<string, unknown> {
+  return {
+    read: "allow",
+    glob: "allow",
+    grep: "allow",
+    list: "allow",
+    lsp: "allow",
+    webfetch: allowWeb ? "allow" : "deny",
+    websearch: allowWeb ? "allow" : "deny",
+    edit: "deny",
+    bash: "deny",
+    task: "deny",
+    todowrite: "deny",
+    question: "deny",
+    external_directory: "deny",
+  }
+}
+
+export const CouncilPlugin: Plugin = async (input) => {
+  const globalConfig = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "opencode", CONFIG_NAME)
+  const projectConfig = path.join(input.worktree, ".opencode", CONFIG_NAME)
+  const configured = await readConfig(globalConfig, DEFAULT_CONFIG)
+  const council = await readConfig(projectConfig, configured)
+
+  return {
+    config: async (config) => {
+      const mutable = config as Record<string, any>
+      mutable.agent ??= {}
+      mutable.command ??= {}
+
+      for (const member of council.members) {
+        mutable.agent[memberAgentName(member.name)] = {
+          mode: "subagent",
+          hidden: true,
+          model: member.model,
+          maxSteps: 12,
+          prompt: memberPrompt(member),
+          permission: memberPermission(council.allow_web),
+        }
+      }
+
+      mutable.agent["council-orchestrator"] = {
+        mode: "subagent",
+        hidden: true,
+        maxSteps: council.members.length + 4,
+        prompt: orchestratorPrompt(council.members, council.minimum_successful_members),
+        permission: {
+          read: "deny",
+          glob: "deny",
+          grep: "deny",
+          list: "deny",
+          lsp: "deny",
+          webfetch: "deny",
+          websearch: "deny",
+          edit: "deny",
+          bash: "deny",
+          task: "allow",
+          todowrite: "deny",
+          question: "deny",
+          external_directory: "deny",
+        },
+      }
+
+      mutable.command.council = {
+        description: "ask independent models and synthesize their responses",
+        agent: "council-orchestrator",
+        subtask: true,
+        template: "User request for the council:\n$ARGUMENTS",
+      }
+
+      const currentDepth = Number(mutable.subagent_depth)
+      mutable.subagent_depth = Number.isFinite(currentDepth) ? Math.max(2, currentDepth) : 2
+    },
+  }
+}
+
+export default CouncilPlugin

@@ -1,0 +1,21 @@
+# Secrets / credentials
+.env
+**/opencode/auth.json
+
+# opencode persisted storage (XDG_DATA_HOME target in per-project devcontainers)
+.devcontainer/data/
+
+# Plugin caches
+*.cache.json
+
+# Local-only experiments
+gsd-council/
+model-curator/
+
+# OS / editor cruft
+.DS_Store
+
+# Local type-check / verify scaffolding (throwaway docker build harnesses)
+.*.Dockerfile
+.rt.mts
+.verify/

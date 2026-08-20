@@ -1,0 +1,62 @@
+{
+	// Build/dev environment for the `opencode-gsd-devcontainer` image itself.
+	//
+	// GOAL: iterate on this repo's Dockerfile / plugin / config from inside a
+	// container. `docker build` runs against the HOST Docker daemon via the
+	// docker-outside-of-docker feature (shared build cache, fast iteration,
+	// no privileged nested daemon).
+	//
+	// NOTE: this mounts the host /var/run/docker.sock, so anything in this
+	// container (including opencode) can control the host Docker daemon. This
+	// trades isolation for speed/simplicity, per project decision.
+	"name": "opencode-gsd-devcontainer (build env)",
+
+	"image": "mcr.microsoft.com/devcontainers/base:trixie",
+
+	"features": {
+		// Use the host Docker daemon (mounts /var/run/docker.sock) + installs
+		// the Docker CLI and buildx in the container. No nested daemon.
+		//
+		// moby:false -> install upstream Docker CE (Docker's official repo)
+		// instead of open-source Moby packages, because moby-cli is not
+		// packaged for Debian trixie yet (the feature errors otherwise).
+		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+			"moby": false,
+			"installDockerBuildx": true
+		},
+		// Node.js so we can run opencode (and its VS Code extension) inside the
+		// build env itself. Installs npm too.
+		"ghcr.io/devcontainers/features/node:1": {
+			"version": "lts"
+		}
+	},
+
+	"remoteUser": "vscode",
+
+	"workspaceFolder": "/workspace",
+	"workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+
+	// Load PPQ_API_KEY (and any other vars) from .env into the container env so
+	// opencode's "{env:PPQ_API_KEY}" resolves. .env lives at the repo root.
+	"runArgs": ["--env-file", "${localWorkspaceFolder}/.env"],
+
+	// Point opencode at this repo's config; persist opencode data inside the
+	// workspace so auth/sessions survive rebuilds.
+	"containerEnv": {
+		"OPENCODE_CONFIG": "/workspace/.devcontainer/opencode.json",
+		"XDG_DATA_HOME": "/workspace/.devcontainer/data"
+	},
+
+	// Install opencode CLI, then sanity-check the Docker CLI + host daemon.
+	"postCreateCommand": "npm install -g opencode-ai@latest && opencode --version && docker buildx version && docker info --format 'Docker daemon: {{.Name}} ({{.ServerVersion}})'",
+
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				// OpenCode VS Code extension.
+				"sst-dev.opencode"
+			],
+			"settings": {}
+		}
+	}
+}

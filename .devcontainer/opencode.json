@@ -1,0 +1,25 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "ppq/gpt-5.5",
+  "permission": {
+    "bash": {
+      "*": "deny",
+      "docker build *": "allow"
+    },
+    "external_directory": "deny"
+  },
+  "plugin": [
+    "/workspace/opencode-ppq-plugin/plugin/opencode-ppq.ts",
+    "/workspace/opencode-council-plugin/plugin/opencode-council.ts"
+  ],
+  "provider": {
+    "ppq": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "PayPerQ - ppq.ai",
+      "options": {
+        "baseURL": "https://api.ppq.ai",
+        "includeUsage": true
+      }
+    },
+  }
+}

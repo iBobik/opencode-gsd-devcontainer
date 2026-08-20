@@ -1,0 +1,11 @@
+{
+  "name": "@opencode-council-plugin/opencode-council",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "latest"
+  }
+}

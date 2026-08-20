@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "ppq/claude-sonnet-5",
+  "provider": {
+    "ppq": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "PayPerQ - ppq.ai",
+      "options": {
+        "baseURL": "https://api.ppq.ai",
+        "includeUsage": true
+      }
+    }
+  }
+}
