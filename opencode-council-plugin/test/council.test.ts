@@ -99,3 +99,15 @@ test("raises depth to the required nested-task minimum", async () => {
 
   expect(config.subagent_depth).toBe(2)
 })
+
+test("registers seven default members and allowlists only those members for tasks", async () => {
+  const config = await configureCouncil()
+  const registered = Object.keys(agents(config)).filter((name) => name.startsWith("council-member-"))
+  const orchestrator = agents(config)["council-orchestrator"]
+
+  expect(registered).toHaveLength(7)
+  expect(orchestrator.permission).toMatchObject({
+    task: { "*": "deny", "council-member-*": "allow" },
+  })
+  expect(config.command).toMatchObject({ council: { agent: "council-orchestrator" } })
+})
