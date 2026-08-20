@@ -19,10 +19,8 @@
  * providers are built from config, and config-defined providers/models are fully
  * supported — that's the mechanism the static "canary" config proved works.
  *
- * The PPQ /v1/models endpoint is PUBLIC, so the full catalog is ALWAYS loaded
- * whether or not a key is present — the key is only needed to actually call a
- * model. This keeps the `ppq` provider listed (opencode deletes config providers
- * with zero models) even before the user authenticates.
+ * The catalog is loaded only after a key is available so OpenCode does not show
+ * models that cannot yet be used. The public catalog request itself is anonymous.
  */
 
 import type { Plugin } from "@opencode-ai/plugin"
@@ -92,11 +90,28 @@ interface CacheShape {
   data: PpqRawModel[]
 }
 
+function isRawModel(value: unknown): value is PpqRawModel {
+  if (!value || typeof value !== "object") return false
+  const model = value as PpqRawModel
+  return typeof model.id === "string"
+    && model.id.length > 0
+    && !/\s/.test(model.id)
+    && !["__proto__", "constructor", "prototype"].includes(model.id)
+}
+
+function validCatalog(value: unknown): value is PpqRawModel[] {
+  return Array.isArray(value) && value.every(isRawModel)
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+}
+
 async function readCache(): Promise<CacheShape | undefined> {
   try {
     const txt = await fs.readFile(cachePath(), "utf8")
     const parsed = JSON.parse(txt) as CacheShape
-    if (Array.isArray(parsed?.data)) return parsed
+    if (Number.isFinite(parsed?.fetchedAt) && validCatalog(parsed?.data)) return parsed
   } catch {
     /* no cache / unreadable — ignore */
   }
@@ -118,31 +133,32 @@ async function writeCache(data: PpqRawModel[]): Promise<void> {
 /**
  * Fetch the raw PPQ catalog, falling back to (and refreshing) the on-disk cache.
  * The `/v1/models` endpoint is PUBLIC — no API key is required to list models
- * (the key is only needed to actually call a model). We send the key as a bearer
- * token when we have one (harmless), but never require it.
+ * (the key is only needed to actually call a model). Catalog requests deliberately
+ * omit credentials.
  */
-async function fetchCatalog(apiKey?: string): Promise<PpqRawModel[]> {
+async function fetchCatalog(): Promise<PpqRawModel[]> {
   const cached = await readCache()
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.data
 
   try {
-    const headers: Record<string, string> = { Accept: "application/json" }
-    if (apiKey) headers.Authorization = `Bearer ${apiKey}`
     // Add a 5-second timeout to avoid hanging opencode startup
-    const res = await fetch(MODELS_ENDPOINT, { 
-      headers,
+    const res = await fetch(MODELS_ENDPOINT, {
+      headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(5000)
     })
     if (!res.ok) throw new Error(`PPQ /v1/models -> ${res.status}`)
     const json = (await res.json()) as { data?: PpqRawModel[] }
-    const data = json.data ?? []
-    if (data.length) {
+    const data = json.data
+    if (validCatalog(data) && data.length) {
       await writeCache(data)
       return data
     }
+    console.warn("[ppq] Could not load model catalog: invalid or empty response")
     if (cached) return cached.data
     return []
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[ppq] Could not load model catalog: ${message}`)
     if (cached) return cached.data
     return []
   }
@@ -150,14 +166,16 @@ async function fetchCatalog(apiKey?: string): Promise<PpqRawModel[]> {
 
 /** Map a PPQ raw model to opencode's STATIC config model shape (costs = USD/1M). */
 function toConfigModel(m: PpqRawModel): ConfigModel {
-  const params = new Set((m.supported_parameters ?? []).map((p) => p.toLowerCase()))
-  const inputs = new Set((m.architecture?.input_modalities ?? ["text"]).map((s) => s.toLowerCase()))
-  const outputs = new Set((m.architecture?.output_modalities ?? ["text"]).map((s) => s.toLowerCase()))
+  const params = new Set(stringList(m.supported_parameters).map((p) => p.toLowerCase()))
+  const inputList = stringList(m.architecture?.input_modalities)
+  const outputList = stringList(m.architecture?.output_modalities)
+  const inputs = new Set((inputList.length ? inputList : ["text"]).map((s) => s.toLowerCase()))
+  const outputs = new Set((outputList.length ? outputList : ["text"]).map((s) => s.toLowerCase()))
 
   const reasoning = params.has("reasoning") || params.has("include_reasoning") || params.has("reasoning_effort")
   const toolcall = params.has("tools") || params.has("tool_choice")
   const temperature = params.has("temperature")
-  const attachment = inputs.has("image") || inputs.has("file") || inputs.has("video") || inputs.has("audio")
+  const attachment = inputs.has("image") || inputs.has("file") || inputs.has("pdf") || inputs.has("video") || inputs.has("audio")
 
   // PPQ uses "file" to mean PDF/document attachments.
   const inputMods: Modality[] = []
@@ -171,17 +189,18 @@ function toConfigModel(m: PpqRawModel): ConfigModel {
   if (outputs.has("text") || outputs.size === 0) outputMods.push("text")
   if (outputs.has("image")) outputMods.push("image")
   if (outputs.has("audio")) outputMods.push("audio")
+  if (outputs.has("video")) outputMods.push("video")
 
-  const inputCost = Math.max(0, m.pricing?.input_per_1M_tokens ?? 0)
-  const outputCost = Math.max(0, m.pricing?.output_per_1M_tokens ?? 0)
-  const context = m.context_length ?? 0
+  const inputCost = Number.isFinite(m.pricing?.input_per_1M_tokens) ? Math.max(0, m.pricing!.input_per_1M_tokens!) : 0
+  const outputCost = Number.isFinite(m.pricing?.output_per_1M_tokens) ? Math.max(0, m.pricing!.output_per_1M_tokens!) : 0
+  const context = Number.isFinite(m.context_length) ? Math.max(0, m.context_length!) : 0
   const releaseDate =
-    typeof m.created_at === "number" && m.created_at > 0
+    typeof m.created_at === "number" && Number.isFinite(m.created_at) && m.created_at > 0
       ? new Date(m.created_at).toISOString().slice(0, 10)
       : undefined
 
   return {
-    name: m.name || m.id,
+    name: typeof m.name === "string" && m.name ? m.name : m.id,
     reasoning,
     tool_call: toolcall,
     temperature,
@@ -202,7 +221,8 @@ export const PpqPlugin: Plugin = async () => {
      * using opencode's static config-model shape.
      */
     config: async (config) => {
-      const key = process.env.PPQ_API_KEY ?? (await storedApiKey())
+      const environmentKey = process.env.PPQ_API_KEY
+      const storedKey = environmentKey ? undefined : await storedApiKey()
 
       config.provider ??= {}
       const ppq = (config.provider.ppq ??= {})
@@ -210,8 +230,13 @@ export const PpqPlugin: Plugin = async () => {
       ppq.name ??= "PayPerQ - ppq.ai"
       ppq.options ??= {}
       ppq.options.baseURL ??= PPQ_BASE_URL
+      const configuredKey = typeof ppq.options.apiKey === "string" ? ppq.options.apiKey : undefined
+      const key = environmentKey ?? storedKey ?? configuredKey
 
-      if (key && !ppq.options.apiKey) ppq.options.apiKey = key
+      // An environment key is the explicit per-run override; configured and stored
+      // keys remain useful for interactive sessions.
+      if (environmentKey) ppq.options.apiKey = environmentKey
+      else if (!ppq.options.apiKey && storedKey) ppq.options.apiKey = storedKey
 
       // If we have a key, fetch the full catalog. If we don't have a key, we
       // DO NOT pollute the model list with 300+ models the user can't use yet.
@@ -225,7 +250,7 @@ export const PpqPlugin: Plugin = async () => {
       const models: Record<string, ConfigModel> = {}
 
       if (key) {
-        const raw = await fetchCatalog(key)
+        const raw = await fetchCatalog()
         for (const m of raw) {
           if (!m?.id) continue
           models[m.id] = toConfigModel(m)
