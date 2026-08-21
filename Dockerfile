@@ -61,6 +61,9 @@ RUN chmod +x /home/node/.gsd-browser/chromium-wrapper.sh
 
 # Installation smoke checks. Authenticated workflows are covered by plugin tests,
 # not image construction.
+ARG BUILDPLATFORM
+ARG TARGETPLATFORM
+
 RUN opencode --version \
     && opencode models ppq \
     && agent-browser --version \
@@ -71,7 +74,11 @@ RUN opencode --version \
     && chromium --version \
     && tmux -V \
     && command -v tinfoil-proxy \
-    && /home/node/.gsd-browser/chromium-wrapper.sh --headless --no-sandbox --disable-gpu --dump-dom about:blank | grep -q '<html>'
+    && if [ "$BUILDPLATFORM" = "$TARGETPLATFORM" ]; then \
+         /home/node/.gsd-browser/chromium-wrapper.sh --headless --no-sandbox --disable-gpu --dump-dom about:blank | grep -q '<html>'; \
+       else \
+         echo "Skipping Chromium runtime test under cross-platform emulation"; \
+       fi
 
 # GSD-Core full profile.
 # `--portable-hooks` makes the hooks work inside Docker.
