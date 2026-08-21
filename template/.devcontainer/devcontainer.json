@@ -1,5 +1,5 @@
 {
-  "name": "OpenCode + GSD",
+  "name": "Example project",
   "image": "ghcr.io/ibobik/opencode-gsd-devcontainer:latest",
   "containerEnv": {
     "XDG_DATA_HOME": "/workspace/.devcontainer/data"
