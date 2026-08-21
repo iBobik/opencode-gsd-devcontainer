@@ -1,7 +1,7 @@
 FROM oven/bun:latest AS unit-tests
 
 WORKDIR /plugin
-COPY package.json package-lock.json ./
+COPY package.json ./
 RUN bun install
 COPY plugin/ ./plugin/
 COPY test/ ./test/

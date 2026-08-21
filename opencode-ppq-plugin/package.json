@@ -1,0 +1,15 @@
+{
+  "name": "@opencode-ppq-plugin/opencode-config",
+  "private": true,
+  "description": "Baked OpenCode config directory with the PPQ provider plugin.",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^1.0.0",
+    "@opencode-ai/plugin": "latest"
+  },
+  "devDependencies": {
+    "@opencode-ai/sdk": "latest"
+  }
+}
