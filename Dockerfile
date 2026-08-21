@@ -52,6 +52,8 @@ RUN curl -fsSL https://github.com/tinfoilsh/tinfoil-proxy/raw/main/install.sh | 
 COPY --chown=node:node opencode-global.json /home/node/.config/opencode/opencode.json
 COPY --chown=node:node opencode-ppq-plugin/plugin/opencode-ppq.ts /home/node/.config/opencode/plugins/
 COPY --chown=node:node opencode-council-plugin/plugin/opencode-council.ts /home/node/.config/opencode/plugins/
+COPY --chown=node:node opencode-gsd-models-plugin/plugin/opencode-gsd-models.ts /home/node/.config/opencode/plugins/
+COPY --chown=node:node gsd-defaults.json /home/node/.gsd/defaults.json
 
 # Chromium wrapper for gsd-browser (see GSD_BROWSER_BROWSER_PATH above).
 COPY --chown=node:node chromium-wrapper.sh /home/node/.gsd-browser/chromium-wrapper.sh
@@ -73,7 +75,10 @@ RUN opencode --version \
 
 # GSD-Core full profile.
 # `--portable-hooks` makes the hooks work inside Docker.
-RUN npx -y @opengsd/gsd-core@latest --opencode --global --portable-hooks
+RUN gsd-core --opencode --global --portable-hooks \
+    && test "$(node -p 'const x=require(process.env.HOME + "/.gsd/defaults.json"); x.model_profile')" = "inherit" \
+    && test "$(node -p 'const x=require(process.env.HOME + "/.gsd/defaults.json"); x.resolve_model_ids')" = "omit" \
+    && test -f /home/node/.config/opencode/gsd-core/bin/shared/model-catalog.json
 
 # agent-browser dogfood skill, installed globally.
 RUN npx skills add vercel-labs/agent-browser --skill agent-browser dogfood --global --yes

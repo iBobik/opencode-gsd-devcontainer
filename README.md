@@ -56,6 +56,42 @@ the plugin can load the catalog.
 The catalog is cached for ten minutes for offline resilience. When no credential is
 available, PPQ shows one sign-in model rather than an unusable full catalog.
 
+## GSD Model Profiles
+
+GSD subagents can use one of three provider profiles without changing project
+configuration:
+
+| Profile | Heavy | Standard | Light |
+| --- | --- | --- | --- |
+| `claude` | Claude Opus 5 | Claude Sonnet 5 | Claude Haiku 4.5 |
+| `gpt` | GPT 5.6 Sol | GPT 5.6 Terra | GPT 5.6 Luna |
+| `mixed` | PPQ Claude Opus 5 | PPQ GPT 5.6 Sol | PPQ Claude Haiku 4.5 |
+
+Set `GSD_MODELS_PROFILE` before starting OpenCode. A process environment value
+wins over a repository-local `.env` or `.devcontainer/.env`; otherwise the image selects an
+authenticated Anthropic, OpenAI, then PPQ provider. If none is available, GSD
+agents inherit the session model.
+
+```sh
+GSD_MODELS_PROFILE=gpt opencode
+```
+
+Alternatively, add this manually to the ignored repository `.env`:
+
+```dotenv
+GSD_MODELS_PROFILE=gpt
+```
+
+Restart OpenCode after changing it. No image rebuild or container reopen is
+needed. The plugin reads only this one `.env` key and never creates or edits the
+file. `/gsd-models-profile [name]` reports the active selection and these manual
+switching options; it does not change configuration.
+
+GSD is installed with neutral `model_profile: "inherit"` and
+`resolve_model_ids: "omit"`; the plugin applies model pins only to GSD agents.
+It warns in the TUI and headless logs when a selected provider/model is not
+connected, `.env` changes, or a GSD agent hits an authentication or quota error.
+
 ## Model Council
 
 The default members are Claude Fable, GPT Sol, Gemini Pro, Qwen Max, Kimi K3, GLM,
@@ -79,7 +115,7 @@ with credentials you do not intend the agent to access.
 
 ## Publishing
 
-GitHub Actions runs both plugin test suites on pull requests. Pushes to `main` and
+GitHub Actions runs all plugin test suites on pull requests. Pushes to `main` and
 version tags publish multi-architecture `linux/amd64` and `linux/arm64` images to
 GHCR. Pull the tag you need, or use an image digest when you need an immutable
 deployment.

@@ -1,0 +1,11 @@
+{
+  "name": "@opencode-gsd-models-plugin/opencode-gsd-models",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "latest"
+  }
+}

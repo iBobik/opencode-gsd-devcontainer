@@ -1,0 +1,5 @@
+{
+  "runtime": "opencode",
+  "model_profile": "inherit",
+  "resolve_model_ids": "omit"
+}
