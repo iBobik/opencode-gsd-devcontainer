@@ -15,13 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
       - name: Test PPQ plugin
-        working-directory: opencode-ppq-plugin
-        run: bun install && bun test
+        run: docker build -f opencode-ppq-plugin/test/Dockerfile opencode-ppq-plugin
       - name: Test council plugin
-        working-directory: opencode-council-plugin
-        run: bun install && bun test
+        run: docker build -f opencode-council-plugin/test/Dockerfile opencode-council-plugin
+      - name: Test GSD models plugin
+        run: docker build -f opencode-gsd-models-plugin/test/Dockerfile opencode-gsd-models-plugin
 
   image:
     needs: test-plugins
