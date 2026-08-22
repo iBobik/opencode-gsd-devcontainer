@@ -1,52 +1,93 @@
 # OpenCode Council Plugin
 
-Adds a universal, read-only multi-model council command to OpenCode:
+Adds a read-only, multi-model council command to OpenCode:
 
 ```text
 /council <prompt>
 ```
 
-The command runs a hidden orchestrator as a subtask. It sends one identical,
-self-contained prompt to each configured member in parallel through OpenCode's
-native Task tool, then returns a synthesis with consensus, disagreements,
-unique observations, uncertainty, and any failed members.
+The plugin asks models from different families to analyze the same request and
+then synthesizes their agreement, disagreements, unique observations, and
+uncertainty.
+
+It is already installed in the OpenCode GSD Devcontainer.
 
 ## Why Use a Model Council?
 
-Consulting models from different families can give the council complementary
-perspectives. Their training data, training objectives, alignment policies, and
-guardrails can differ, producing distinct strengths, blind spots, and failure
-modes. Evidence-backed agreement is therefore more useful, and disagreement is
-worth surfacing. This does not guarantee independence or correctness: assess the
-evidence rather than relying on majority vote.
+Model families can have different strengths, blind spots, training objectives,
+and guardrails. Comparing their evidence can expose alternatives that one model
+misses. Agreement is not proof, however, and majority vote does not guarantee a
+correct answer.
+
+## Requirements
+
+- OpenCode with support for local TypeScript plugins.
+- Access to every configured model.
+- The [OpenCode PPQ Plugin](../opencode-ppq-plugin/README.md) when using the
+  built-in PPQ members.
+
+## Installation (not using Docker image)
+
+From the repository root, copy the plugin into an OpenCode plugin directory.
+
+For one project:
+
+```sh
+mkdir -p /path/to/project/.opencode/plugins
+cp opencode-council-plugin/plugin/opencode-council.ts /path/to/project/.opencode/plugins/
+```
+
+For all projects:
+
+```sh
+mkdir -p ~/.config/opencode/plugins
+cp opencode-council-plugin/plugin/opencode-council.ts ~/.config/opencode/plugins/
+```
+
+If `XDG_CONFIG_HOME` is set, use `$XDG_CONFIG_HOME/opencode/plugins/` instead of
+`~/.config/opencode/plugins/`. Restart OpenCode after installing or updating the
+plugin.
+
+## Quick Start
+
+The default members use PPQ. Install and authenticate the PPQ plugin, restart
+OpenCode, then run:
+
+```text
+/council Review this design and identify its main risks.
+```
+
+One request can invoke every configured member plus the orchestrator, increasing
+latency and model cost.
 
 ## Defaults
 
-The built-in council uses PPQ model identifiers (`ppq/...`) for Claude, GPT,
-Gemini, Qwen, Kimi, GLM, and Grok. PPQ is the simplest way to access these model
-families through one OpenCode provider configuration and one authentication
-flow, rather than setting up a separate provider and credential for each family.
-Install and authenticate the [OpenCode PPQ Plugin](../opencode-ppq-plugin/README.md)
-before using the defaults.
+The built-in council uses these current PPQ model IDs:
+
+| Member | Model |
+| --- | --- |
+| Claude | `ppq/claude-fable-5` |
+| GPT | `ppq/gpt-5.6-sol` |
+| Gemini | `ppq/~google/gemini-pro-latest` |
+| Qwen | `ppq/qwen/qwen3.8-max` |
+| Kimi | `ppq/moonshotai/kimi-k3` |
+| GLM | `ppq/glm-5.2` |
+| Grok | `ppq/grok-4.6` |
+
+The default minimum for consensus is two successful members. Web access is
+enabled for members by default.
 
 ## Configuration
 
-You can provide your own member list, including models configured through
-providers other than PPQ.
-
-Configuration is merged in this order:
+Configuration is merged from least to most specific:
 
 1. Built-in defaults.
-2. `~/.config/opencode/council.json`.
+2. `$XDG_CONFIG_HOME/opencode/council.json`, or
+   `~/.config/opencode/council.json` when `XDG_CONFIG_HOME` is unset.
 3. `.opencode/council.json` in the active worktree.
 
-Each higher-level file can override `members`, `minimum_successful_members`, or
-`allow_web`. Invalid files are ignored and the last valid configuration remains
-active.
-
-When a configuration overrides `members` without specifying
-`minimum_successful_members`, the inherited minimum is capped at the new member
-count. An explicitly invalid minimum still makes that configuration invalid.
+Each later file can override `members`, `minimum_successful_members`, or
+`allow_web`:
 
 ```json
 {
@@ -55,20 +96,69 @@ count. An explicitly invalid minimum still makes that configuration invalid.
     { "name": "gemini", "model": "ppq/~google/gemini-pro-latest" }
   ],
   "minimum_successful_members": 2,
-  "allow_web": true
+  "allow_web": false
 }
 ```
 
-Council members can read files, search files, use LSP, and optionally fetch or
-search the web. They cannot edit files, run shell commands, delegate tasks, or
-ask separate user questions.
+Configuration rules:
 
-`minimum_successful_members` controls when the orchestrator labels an
-observation as consensus. It is a best-effort synthesis policy: OpenCode's Task
-tool does not expose structured completion results to this config-only plugin,
-so a response is still returned when the quorum is not met and identifies that
-condition.
+- `members` must contain 1 to 12 entries.
+- Names must start with a letter or number and contain only letters, numbers,
+  and hyphens. Names are unique without regard to case.
+- Each model must use a `provider/model` ID, and model IDs cannot be repeated.
+- `minimum_successful_members` must be an integer from `1` through the member
+  count.
+- `allow_web` must be `true` or `false`.
 
-The council orchestrator delegates to member agents, which requires a subagent
-depth of two. The plugin raises `subagent_depth` to at least `2` when loaded;
-higher configured values are preserved.
+When `members` changes without an explicit minimum, the inherited minimum is
+capped at the new member count. An invalid file is ignored and a warning is
+written to the OpenCode log. Restart OpenCode after changing configuration.
+
+## How It Works
+
+The plugin creates one hidden, model-pinned agent for each member and a hidden
+orchestrator. The orchestrator is instructed to submit all member Task calls in
+one assistant message so OpenCode can run them concurrently, then wait for the
+results and produce one response.
+
+`minimum_successful_members` controls when the response labels an observation
+as consensus. It is not a completion gate: if fewer members return successfully,
+the orchestrator still responds with the available evidence and identifies that
+the quorum was not met.
+
+Council members can read and search project files and use LSP. When `allow_web`
+is enabled, they can also fetch and search the web. They cannot edit files, run
+shell commands, delegate tasks, access external directories, or ask separate
+questions. The orchestrator can only delegate to council member agents.
+
+The nested delegation requires a subagent depth of two. The plugin raises
+`subagent_depth` to at least `2` and preserves higher configured values.
+
+## Privacy and Cost
+
+The request is sent to every configured model provider. Project content read by
+a member may also be included in that provider request. Disable web access or
+choose fewer members when privacy, latency, or cost is more important than model
+diversity.
+
+## Troubleshooting
+
+- A member fails: verify that its provider is connected and its model ID is
+  available.
+- The defaults fail: install the PPQ plugin, connect PPQ, and restart OpenCode.
+- Configuration has no effect: check the OpenCode log for a validation warning
+  and restart after correcting the file.
+- Responses are too slow or expensive: configure fewer members and lower the
+  minimum accordingly.
+
+## Test
+
+From the repository root, run:
+
+```sh
+docker build -f opencode-council-plugin/test/Dockerfile opencode-council-plugin
+```
+
+The Docker build tests configuration, permissions, agent registration, and
+plugin loading with the official OpenCode image. It does not call live models or
+guarantee provider-side concurrency.

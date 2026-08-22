@@ -1,121 +1,115 @@
 # OpenCode GSD Devcontainer
 
-A rolling devcontainer image with OpenCode, GSD-Core, GSD-pi, the PPQ provider
-plugin, a seven-member read-only model council, and browser tooling.
+A VS Code development container for running [OpenCode](https://opencode.ai) with
+[GSD](https://opengsd.net), multi-provider model routing, a read-only model
+council, and browser automation.
 
 ```text
 ghcr.io/ibobik/opencode-gsd-devcontainer:latest
 ```
 
+The image tracks the latest upstream releases. Use an image digest
+when you need reproducible builds.
+
 ## Included
 
-- [OpenCode]() with the [PPQ.ai]() provider plugin. After authentication it exposes the live
-  PPQ catalog with all model families on the market.
-- `/council <prompt>`, which asks seven different models in parallel and
-  synthesizes their answers.
-- [GSD](https://opengsd.net) (gsd-core, gsd-pi and gsd-browser) for autonomous development
-- Chromium, Playwright, agent-browser, gsd-browser, tmux, and the agent-browser
-  dogfood skill.
-- `tinfoil-proxy` for access to the private TEE models
+| Component | Purpose |
+| --- | --- |
+| [OpenCode](https://opencode.ai) | Provider-agnostic coding-agent runtime |
+| [PPQ provider plugin](opencode-ppq-plugin/README.md) | Adds the live [PPQ](https://ppq.ai) model catalog and authentication |
+| [Council plugin](opencode-council-plugin/README.md) | Asks multiple model families to analyze the same request and synthesizes their responses |
+| [GSD model profiles](opencode-gsd-models-plugin/README.md) | Routes GSD agents to appropriate models for each workload tier |
+| [GSD](https://opengsd.net) | Autonomous planning, implementation, and verification |
+| Browser tooling | Chromium, Playwright, agent-browser, and gsd-browser |
+| [Tinfoil Proxy](https://tinfoil.sh) | Preinstalled proxy for accessing private models in trusted execution environments (TEEs) |
+| Terminal tooling | tmux, the Skills CLI, and the agent-browser dogfood skill |
 
-The image intentionally tracks the latest upstream package versions. Each build
-runs installation smoke checks, while plugin behavior is tested in GitHub Actions.
+## Quick Start
 
-## Use In A Project
+You need Docker and VS Code with the Dev Containers extension.
 
-Copy the supplied template into a project, then reopen it in VS Code:
-
-```sh
-cp -R template/.devcontainer /path/to/project/.devcontainer
-```
-
-The template persists OpenCode authentication and sessions in
-`.devcontainer/data/`, which is ignored by its local `.gitignore`.
-
-To build the image locally instead:
+From your project root, download the dev container template:
 
 ```sh
-docker build -t opencode-gsd-devcontainer:local .
+mkdir -p .devcontainer && \
+  curl -fsSL \
+    -o .devcontainer/devcontainer.json https://raw.githubusercontent.com/ibobik/opencode-gsd-devcontainer/master/template/.devcontainer/devcontainer.json \
+    -o .devcontainer/.gitignore https://raw.githubusercontent.com/ibobik/opencode-gsd-devcontainer/master/template/.devcontainer/.gitignore
 ```
 
-Set the template image to `opencode-gsd-devcontainer:local` for local testing.
+Open the project in VS Code and choose **Reopen in Container**, then start
+OpenCode:
 
-## PPQ Authentication
-
-Run `/connect`, choose PPQ, and paste an API key. OpenCode stores it at:
-
-```text
-$XDG_DATA_HOME/opencode/auth.json
+```sh
+opencode
 ```
 
-The template sets `XDG_DATA_HOME` to persistent workspace storage. Alternatively,
-set `PPQ_API_KEY` in the container environment. An environment key takes precedence
-over stored and configured credentials. Restart OpenCode after interactive setup so
-the plugin can load the catalog.
+Run `/connect` to add a model provider. For PPQ, select PPQ and paste an API
+key.
 
-The catalog is cached for ten minutes for offline resilience. When no credential is
-available, PPQ shows one sign-in model rather than an unusable full catalog.
+The template persists OpenCode authentication and sessions under
+`.devcontainer/data/`. Its local `.gitignore` excludes that directory.
 
-## GSD Model Profiles
+## Features
 
-GSD subagents can use one of three provider profiles without changing project
-configuration:
+### PPQ Models
 
-| Profile | Heavy | Standard | Light |
-| --- | --- | --- | --- |
-| `claude` | Claude Opus 5 | Claude Sonnet 5 | Claude Haiku 4.5 |
-| `gpt` | GPT 5.6 Sol | GPT 5.6 Terra | GPT 5.6 Luna |
-| `mixed` | PPQ Claude Opus 5 | PPQ GPT 5.6 Sol | PPQ Claude Haiku 4.5 |
+The PPQ plugin loads the current PPQ catalog after authentication and caches it
+for startup resilience. See the [PPQ plugin guide](opencode-ppq-plugin/README.md)
+for installation, credential precedence, and failure behavior.
 
-Set `GSD_MODELS_PROFILE` before starting OpenCode. A process environment value
-wins over a repository-local `.env` or `.devcontainer/.env`; otherwise the image selects an
-authenticated Anthropic, OpenAI, then PPQ provider. If none is available, GSD
-agents inherit the session model.
+### GSD Model Profiles
+
+Set `GSD_MODELS_PROFILE` to `claude`, `gpt`, or `mixed` before starting
+OpenCode. If it is unset, the plugin selects a profile from detected provider
+credentials or lets GSD agents inherit the session model.
 
 ```sh
 GSD_MODELS_PROFILE=gpt opencode
 ```
 
-Alternatively, add this manually to the ignored repository `.env`:
+Run `/gsd-models-profile` to report the active selection. The command does not
+change configuration. See the
+[GSD model profiles guide](opencode-gsd-models-plugin/README.md) for model
+mappings and exact precedence.
 
-```dotenv
-GSD_MODELS_PROFILE=gpt
+### Model Council
+
+Use `/council <prompt>` to ask the configured council members for independent
+analysis and receive a synthesis of their agreement, disagreements, and
+uncertainty.
+
+The default council uses seven PPQ models. Each member call can add latency and
+incur model cost. See the [council guide](opencode-council-plugin/README.md) to
+change its members, quorum, or web access.
+
+## Browser Security
+
+Browser tools use the system Chromium binary with `--no-sandbox`,
+`--disable-gpu`, and `--disable-dev-shm-usage` for container compatibility.
+Treat browser sessions as untrusted and do not expose credentials or sensitive
+sites that the agent should not access.
+
+## Build and Test
+
+Build the image locally:
+
+```sh
+docker build -t opencode-gsd-devcontainer:local .
 ```
 
-Restart OpenCode after changing it. No image rebuild or container reopen is
-needed. The plugin reads only this one `.env` key and never creates or edits the
-file. `/gsd-models-profile [name]` reports the active selection and these manual
-switching options; it does not change configuration.
+Set the template image to `opencode-gsd-devcontainer:local` to use that build.
 
-GSD is installed with neutral `model_profile: "inherit"` and
-`resolve_model_ids: "omit"`; the plugin applies model pins only to GSD agents.
-It warns in the TUI and headless logs when a selected provider/model is not
-connected, `.env` changes, or a GSD agent hits an authentication or quota error.
+Run the plugin test suites from the repository root:
 
-## Model Council
-
-The default members are Claude Fable, GPT Sol, Gemini Pro, Qwen Max, Kimi K3, GLM,
-and Grok. Configure a different member list, quorum, or web access in either:
-
-```text
-~/.config/opencode/council.json
-.opencode/council.json
+```sh
+docker build -f opencode-ppq-plugin/test/Dockerfile opencode-ppq-plugin
+docker build -f opencode-council-plugin/test/Dockerfile opencode-council-plugin
+docker build -f opencode-gsd-models-plugin/test/Dockerfile opencode-gsd-models-plugin
 ```
-
-Project configuration takes precedence. See
-[`opencode-council-plugin/README.md`](opencode-council-plugin/README.md) for the
-schema. Each member call can incur model cost.
-
-## Browser Notes
-
-The image uses the system Chromium binary for browser tooling. Chromium is launched
-with `--no-sandbox`, `--disable-gpu`, and `--disable-dev-shm-usage` for container
-compatibility. Treat browser sessions as untrusted and do not browse sensitive sites
-with credentials you do not intend the agent to access.
 
 ## Publishing
 
-GitHub Actions runs all plugin test suites on pull requests. Pushes to `main` and
-version tags publish multi-architecture `linux/amd64` and `linux/arm64` images to
-GHCR. Pull the tag you need, or use an image digest when you need an immutable
-deployment.
+GitHub Actions tests all plugins on pull requests. Pushes to `master` and tags
+matching `v*` publish `linux/amd64` and `linux/arm64` images to GHCR. Use an
+image digest for an immutable deployment.
