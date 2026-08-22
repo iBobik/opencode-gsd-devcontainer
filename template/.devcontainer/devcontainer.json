@@ -1,6 +1,7 @@
 {
   "name": "Example project",
   "image": "ghcr.io/ibobik/opencode-gsd-devcontainer:latest",
+  "runArgs": ["--name", "${localWorkspaceFolderBasename}-${devcontainerId}"],
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
   "containerEnv": {
