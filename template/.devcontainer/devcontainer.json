@@ -1,7 +1,17 @@
 {
   "name": "Example project",
   "image": "ghcr.io/ibobik/opencode-gsd-devcontainer:latest",
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
   "containerEnv": {
     "XDG_DATA_HOME": "/workspace/.devcontainer/data"
+  },
+  "postAttachCommand": "bash -c 'npx skills experimental_install -y'",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"sst-dev.opencode"
+      ]
+    }
   }
 }
