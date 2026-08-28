@@ -15,7 +15,11 @@
       "/tmp/*": "allow"
     },
     "external_directory": {
-      "/tmp/*": "allow"
+      "/tmp/*": "allow",
+      "~/.config/opencode/agents/*": "allow"
+    },
+    "read": {
+      "~/.config/opencode/agents/*": "allow"
     }
   }
 }
