@@ -29,7 +29,7 @@ const DEFAULT_CONFIG: CouncilConfig = {
     { name: "gemini", model: "ppq/~google/gemini-pro-latest" },
     { name: "qwen", model: "ppq/qwen/qwen3.8-max" },
     { name: "kimi", model: "ppq/moonshotai/kimi-k3" },
-    { name: "glm", model: "ppq/glm-5.2" },
+    { name: "glm", model: "ppq/glm-5.3" },
     { name: "grok", model: "ppq/grok-4.6" },
   ],
   minimum_successful_members: 2,

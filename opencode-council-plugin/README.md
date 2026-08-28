@@ -71,7 +71,7 @@ The built-in council uses these current PPQ model IDs:
 | Gemini | `ppq/~google/gemini-pro-latest` |
 | Qwen | `ppq/qwen/qwen3.8-max` |
 | Kimi | `ppq/moonshotai/kimi-k3` |
-| GLM | `ppq/glm-5.2` |
+| GLM | `ppq/glm-5.3` |
 | Grok | `ppq/grok-4.6` |
 
 The default minimum for consensus is two successful members. Web access is
