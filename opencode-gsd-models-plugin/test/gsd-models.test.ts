@@ -24,7 +24,7 @@ test("pins catalog-backed GSD agents and preserves unrelated agents", async () =
     } }))
     process.env.OPENCODE_CONFIG = join(root, "config", "opencode.json")
     process.env.GSD_MODELS_PROFILE = "gpt"
-    const hooks = await GsdModelsPlugin({ worktree: root, directory: root, client: { tui: { showToast: async () => ({}) } } } as never)
+    const hooks = await GsdModelsPlugin({ worktree: root, directory: root, client: { app: { log: async () => ({}) }, tui: { showToast: async () => ({}) } } } as never)
     const config: Record<string, any> = { agent: {
       "gsd-planner": { model: "old/model", variant: "high", prompt: "keep" },
       "gsd-executor": { model: "old/model" }, other: { model: "other/model" },
@@ -57,7 +57,7 @@ test("invalid explicit profiles stay in inherit mode", async () => {
     process.env.OPENCODE_CONFIG = join(root, "config", "opencode.json")
     process.env.GSD_MODELS_PROFILE = "typo"
     process.env.ANTHROPIC_API_KEY = "test-key"
-    const hooks = await GsdModelsPlugin({ worktree: root, directory: root, client: { tui: { showToast: async () => ({}) } } } as never)
+    const hooks = await GsdModelsPlugin({ worktree: root, directory: root, client: { app: { log: async () => ({}) }, tui: { showToast: async () => ({}) } } } as never)
     const config: Record<string, any> = { agent: { "gsd-planner": { model: "old/model" } } }
     await hooks.config?.(config as never)
     expect(config.agent["gsd-planner"].model).toBeUndefined()
@@ -80,7 +80,7 @@ test("blocks conflicting GSD config setters", async () => {
     await writeFile(join(root, ".planning", "config.json"), JSON.stringify({
       model_profile: "inherit", resolve_model_ids: "omit", telemetry: false,
     }))
-    const hooks = await GsdModelsPlugin({ worktree: root, directory: root, client: { tui: { showToast: async () => ({}) } } } as never)
+    const hooks = await GsdModelsPlugin({ worktree: root, directory: root, client: { app: { log: async () => ({}) }, tui: { showToast: async () => ({}) } } } as never)
     await expect(hooks["tool.execute.before"]?.({ tool: "bash" } as never, { args: { command: "gsd-tools query config-set model_profile balanced" } } as never)).rejects.toThrow("GSD model routing")
     await expect(hooks["tool.execute.before"]?.({ tool: "bash" } as never, { args: { command: "gsd-tools --cwd /project query config-set.model_profile budget --raw" } } as never)).rejects.toThrow("GSD model routing")
     await expect(hooks["tool.execute.before"]?.({ tool: "bash" } as never, { args: { command: "node /tmp/gsd-tools.cjs query config-set.resolve_model_ids true" } } as never)).rejects.toThrow("GSD model routing")
@@ -111,8 +111,12 @@ test("does not attribute known non-GSD failures to GSD", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencode-gsd-models-test-"))
   const messages: string[] = []
   try {
-    const hooks = await GsdModelsPlugin({ worktree: root, directory: root, client: { tui: {
-      showToast: async ({ body }: { body: { message: string } }) => { messages.push(body.message); return {} },
+    const hooks = await GsdModelsPlugin({ worktree: root, directory: root, client: { app: { log: async () => ({}) }, tui: {
+      showToast: async ({ body }: { body: { title?: string; message: string; variant: string } }) => {
+        expect(body).toMatchObject({ title: "GSD model routing", variant: "warning" })
+        messages.push(body.message)
+        return {}
+      },
     } } } as never)
     await hooks["chat.message"]?.({ sessionID: "regular", agent: "general" } as never, {} as never)
     await hooks.event?.({ event: { type: "session.error", properties: {

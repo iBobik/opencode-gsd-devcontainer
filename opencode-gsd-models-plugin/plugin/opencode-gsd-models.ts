@@ -306,7 +306,11 @@ export const GsdModelsPlugin: Plugin = async (input) => {
   const alerted = new Set<string>()
   const sessionAgents = new Map<string, string>()
 
-  const warn = (message: string) => console.warn(`[gsd-models] ${message}`)
+  const warn = (message: string) => {
+    void input.client.app.log({
+      body: { service: "gsd-models", level: "warn", message },
+    }).catch(() => {})
+  }
   const toast = async (message: string, variant: "info" | "warning" | "error" = "warning") => {
     try { await input.client.tui.showToast({ body: { title: "GSD model routing", message, variant } }) } catch { /* headless or unavailable TUI */ }
   }
