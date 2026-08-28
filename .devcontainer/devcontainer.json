@@ -13,6 +13,8 @@
 
 	"image": "mcr.microsoft.com/devcontainers/base:trixie",
 
+  "runArgs": ["--name", "${localWorkspaceFolderBasename}-${devcontainerId}"],
+
 	"features": {
 		// Use the host Docker daemon (mounts /var/run/docker.sock) + installs
 		// the Docker CLI and buildx in the container. No nested daemon.
