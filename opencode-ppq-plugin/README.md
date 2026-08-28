@@ -71,7 +71,7 @@ PPQ_API_KEY=your-key opencode
 
 Credentials are resolved in this order:
 
-1. `PPQ_API_KEY` in the process environment.
+1. `PPQ_API_KEY` exported in the process environment.
 2. The PPQ key stored by OpenCode in `$XDG_DATA_HOME/opencode/auth.json`, or
    `~/.local/share/opencode/auth.json` when `XDG_DATA_HOME` is unset.
 3. `provider.ppq.options.apiKey` in OpenCode configuration.
@@ -98,6 +98,9 @@ precedence over catalog entries with the same ID.
 ## Troubleshooting
 
 - Only `sign-in-required` appears: connect PPQ and restart OpenCode.
+- A key set only in a project `.env` file is ignored: OpenCode does not read
+  `.env` files. Export `PPQ_API_KEY` in the shell or store the key with
+  `/connect`.
 - The catalog does not refresh: wait ten minutes, remove the cache, or restart
   after checking network access to `api.ppq.ai`.
 - A configured key is ignored: `PPQ_API_KEY` and OpenCode's stored credential
