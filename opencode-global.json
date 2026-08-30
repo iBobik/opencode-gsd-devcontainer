@@ -1,5 +1,8 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "@howaboua/opencode-usage-plugin"
+  ],
   "provider": {
     "ppq": {
       "npm": "@ai-sdk/openai-compatible",

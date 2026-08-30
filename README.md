@@ -2,7 +2,7 @@
 
 A VS Code development container for running [OpenCode](https://opencode.ai) with
 [GSD](https://opengsd.net), multi-provider model routing, a read-only model
-council, and browser automation.
+council, usage reporting, and browser automation.
 
 ```text
 ghcr.io/ibobik/opencode-gsd-devcontainer:latest
@@ -17,6 +17,7 @@ when you need reproducible builds.
 | --- | --- |
 | [OpenCode](https://opencode.ai) | Provider-agnostic coding-agent runtime |
 | [PPQ provider plugin](opencode-ppq-plugin/README.md) | Adds the live [PPQ](https://ppq.ai) model catalog and authentication |
+| [OpenCode usage plugin](https://www.npmjs.com/package/@howaboua/opencode-usage-plugin) | Reports token usage and estimated model cost |
 | [Council plugin](opencode-council-plugin/README.md) | Asks multiple model families to analyze the same request and synthesizes their responses |
 | [GSD model profiles](opencode-gsd-models-plugin/README.md) | Routes GSD agents to appropriate models for each workload tier |
 | [GSD](https://opengsd.net) | Autonomous planning, implementation, and verification |
@@ -57,6 +58,11 @@ The template persists OpenCode authentication and sessions under
 The PPQ plugin loads the current PPQ catalog after authentication and caches it
 for startup resilience. See the [PPQ plugin guide](opencode-ppq-plugin/README.md)
 for installation, credential precedence, and failure behavior.
+
+### Usage Reporting
+
+The included [`@howaboua/opencode-usage-plugin`](https://www.npmjs.com/package/@howaboua/opencode-usage-plugin)
+reports token usage and estimated cost for OpenCode sessions.
 
 ### GSD Model Profiles
 
