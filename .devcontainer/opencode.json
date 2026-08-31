@@ -3,7 +3,10 @@
   "permission": {
     "bash": {
       "*": "ask",
-      "docker build *": "allow"
+      "docker build *": "allow",
+      "git status *": "allow",
+      "git diff *": "allow",
+      "git log *": "allow"
     },
     "external_directory": "deny"
   },
