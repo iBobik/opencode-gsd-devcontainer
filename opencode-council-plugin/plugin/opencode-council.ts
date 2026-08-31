@@ -37,6 +37,9 @@ const DEFAULT_CONFIG: CouncilConfig = {
 }
 
 const CONFIG_NAME = "council.json"
+const HISTORY_MESSAGE_LIMIT = 20
+const HISTORY_CHARACTER_LIMIT = 24_000
+const HISTORY_TRUNCATION_MARKER = "\n...[earlier content in this message omitted]...\n"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -104,6 +107,52 @@ async function readConfig(file: string, base: CouncilConfig): Promise<CouncilCon
 
 function memberAgentName(name: string): string {
   return `council-member-${name.toLowerCase()}`
+}
+
+function truncateHistoryBlock(block: string, limit: number): string {
+  if (block.length <= limit) return block
+  if (limit <= HISTORY_TRUNCATION_MARKER.length) return block.slice(-limit)
+  const available = limit - HISTORY_TRUNCATION_MARKER.length
+  const start = Math.ceil(available / 2)
+  const end = Math.floor(available / 2)
+  return block.slice(0, start) + HISTORY_TRUNCATION_MARKER + block.slice(-end)
+}
+
+function formatRecentHistory(value: unknown): string {
+  if (!Array.isArray(value)) return ""
+
+  const messages = value.flatMap((message, index) => {
+    if (!isRecord(message) || !isRecord(message.info) || !Array.isArray(message.parts)) return []
+    const role = message.info.role
+    if (role !== "user" && role !== "assistant") return []
+    const text = message.parts
+      .filter((part) => isRecord(part) && part.type === "text" && part.synthetic !== true && part.ignored !== true)
+      .map((part) => String((part as Record<string, unknown>).text ?? "").trim())
+      .filter(Boolean)
+      .join("\n")
+    if (!text) return []
+    const time = isRecord(message.info.time) && typeof message.info.time.created === "number"
+      ? message.info.time.created
+      : index
+    return [{ index, time, block: `${role === "user" ? "User" : "Assistant"}:\n${text}` }]
+  })
+
+  messages.sort((a, b) => a.time - b.time || a.index - b.index)
+  const recent = messages.slice(-HISTORY_MESSAGE_LIMIT)
+  const selected: string[] = []
+  let remaining = HISTORY_CHARACTER_LIMIT
+
+  for (let index = recent.length - 1; index >= 0; index--) {
+    const block = recent[index].block
+    const separatorLength = selected.length > 0 ? 2 : 0
+    const allowance = remaining - separatorLength
+    if (allowance <= 0) break
+    selected.push(truncateHistoryBlock(block, allowance))
+    remaining -= Math.min(block.length, allowance) + separatorLength
+    if (block.length > allowance) break
+  }
+
+  return selected.reverse().join("\n\n")
 }
 
 function memberPrompt(member: Member): string {
@@ -207,6 +256,24 @@ export const CouncilPlugin: Plugin = async (input) => {
 
       const currentDepth = Number(mutable.subagent_depth)
       mutable.subagent_depth = Number.isFinite(currentDepth) ? Math.max(2, currentDepth) : 2
+    },
+    "command.execute.before": async (command, output) => {
+      if (command.command !== "council") return
+      const task = output.parts.find((part) => part.type === "subtask" && part.agent === "council-orchestrator")
+      if (!task || task.type !== "subtask") return
+
+      try {
+        const response = await input.client.session.messages({
+          path: { id: command.sessionID },
+          query: { limit: HISTORY_MESSAGE_LIMIT },
+        })
+        const history = formatRecentHistory(response.data)
+        if (!history) return
+        task.prompt = `Recent conversation context (oldest to newest; may be truncated):\n\n${history}\n\nCurrent council request:\n${task.prompt}`
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.warn(`[council] Could not read session history for ${command.sessionID}: ${message}`)
+      }
     },
   }
 }

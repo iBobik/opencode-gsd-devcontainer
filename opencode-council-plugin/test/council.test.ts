@@ -6,6 +6,42 @@ import { CouncilPlugin } from "../plugin/opencode-council"
 
 type GeneratedConfig = Record<string, unknown>
 
+async function runCouncilCommand(messages: unknown, prompt = "User request for the council:\nreview it"): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "opencode-council-command-test-"))
+  const worktree = join(root, "project")
+  const previousConfigHome = process.env.XDG_CONFIG_HOME
+
+  try {
+    await mkdir(join(worktree, ".opencode"), { recursive: true })
+    process.env.XDG_CONFIG_HOME = join(root, "config")
+    const client = {
+      session: {
+        messages: async () => {
+          if (messages instanceof Error) throw messages
+          return { data: messages }
+        },
+      },
+    }
+    const hooks = await CouncilPlugin({ worktree, client } as never)
+    const parts = [{
+      type: "subtask" as const,
+      agent: "council-orchestrator",
+      description: "",
+      prompt,
+    }]
+    await hooks["command.execute.before"]?.({
+      command: "council",
+      sessionID: "session-1",
+      arguments: "review it",
+    }, { parts } as never)
+    return parts[0].prompt
+  } finally {
+    if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME
+    else process.env.XDG_CONFIG_HOME = previousConfigHome
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
 async function configureCouncil(projectConfig?: string, initialConfig: GeneratedConfig = {}, warnings?: string[]): Promise<GeneratedConfig> {
   const root = await mkdtemp(join(tmpdir(), "opencode-council-test-"))
   const worktree = join(root, "project")
@@ -137,4 +173,66 @@ test("retries failures and continues incomplete responses once in fresh parallel
   expect(prompt).toContain("never retry any member more than once")
   expect(prompt).toContain("continue even if some members still failed")
   expect(prompt).toContain("retain useful evidence from an incomplete initial response")
+})
+
+test("adds recent visible conversation text to the council request", async () => {
+  const prompt = await runCouncilCommand([
+    {
+      info: { role: "assistant", time: { created: 2 } },
+      parts: [
+        { type: "text", text: "I changed src/auth.ts." },
+        { type: "text", text: "internal summary", synthetic: true },
+        { type: "reasoning", text: "private reasoning" },
+        { type: "text", text: "superseded answer", ignored: true },
+      ],
+    },
+    {
+      info: { role: "user", time: { created: 1 } },
+      parts: [{ type: "text", text: "Fix the authentication bug." }],
+    },
+  ])
+
+  expect(prompt).toContain("User:\nFix the authentication bug.")
+  expect(prompt).toContain("Assistant:\nI changed src/auth.ts.")
+  expect(prompt.indexOf("Fix the authentication bug.")).toBeLessThan(prompt.indexOf("I changed src/auth.ts."))
+  expect(prompt).toContain("Current council request:\nUser request for the council:\nreview it")
+  expect(prompt).not.toContain("internal summary")
+  expect(prompt).not.toContain("private reasoning")
+  expect(prompt).not.toContain("superseded answer")
+})
+
+test("limits history to the newest twenty messages", async () => {
+  const messages = Array.from({ length: 21 }, (_, index) => ({
+    info: { role: "user", time: { created: index } },
+    parts: [{ type: "text", text: `history-message-${index}` }],
+  }))
+  const prompt = await runCouncilCommand(messages)
+
+  expect(prompt).not.toContain("history-message-0\n")
+  expect(prompt).toContain("history-message-1")
+  expect(prompt).toContain("history-message-20")
+})
+
+test("truncates oversized history while retaining both ends of the newest message", async () => {
+  const text = "start-marker-" + "x".repeat(30_000) + "-end-marker"
+  const prompt = await runCouncilCommand([{
+    info: { role: "assistant", time: { created: 1 } },
+    parts: [{ type: "text", text }],
+  }])
+
+  expect(prompt).toContain("start-marker-")
+  expect(prompt).toContain("[earlier content in this message omitted]")
+  expect(prompt).toContain("-end-marker")
+  expect(prompt.length).toBeLessThan(24_200)
+})
+
+test("keeps the original request when session history cannot be read", async () => {
+  const original = "User request for the council:\nreview it"
+  const warning = console.warn
+  console.warn = () => {}
+  try {
+    expect(await runCouncilCommand(new Error("history unavailable"), original)).toBe(original)
+  } finally {
+    console.warn = warning
+  }
 })
