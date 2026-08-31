@@ -91,7 +91,15 @@ test("preserves higher depth settings and grants members read-only access", asyn
   const member = agents(config)["council-member-claude"]
 
   expect(config.subagent_depth).toBe(5)
-  expect(member.permission).toMatchObject({ read: "allow", edit: "deny", bash: "deny", task: "deny" })
+  expect(member.permission).toMatchObject({
+    read: "allow",
+    edit: "deny",
+    bash: "deny",
+    task: "deny",
+    doom_loop: "deny",
+  })
+  expect(member.steps).toBe(12)
+  expect(member.maxSteps).toBeUndefined()
 })
 
 test("raises depth to the required nested-task minimum", async () => {
@@ -108,6 +116,25 @@ test("registers seven default members and allowlists only those members for task
   expect(registered).toHaveLength(7)
   expect(orchestrator.permission).toMatchObject({
     task: { "*": "deny", "council-member-*": "allow" },
+    doom_loop: "deny",
   })
+  expect(orchestrator.steps).toBe(11)
+  expect(orchestrator.maxSteps).toBeUndefined()
   expect(config.command).toMatchObject({ council: { agent: "council-orchestrator" } })
+})
+
+test("retries failures and continues incomplete responses once in fresh parallel calls", async () => {
+  const config = await configureCouncil()
+  const prompt = String(agents(config)["council-orchestrator"].prompt)
+
+  expect(prompt).toContain("For an explicit failure or a response with no usable analysis, retry once with the original task prompt")
+  expect(prompt).toContain("reached its maximum steps, stopped early, or left requested work unfinished")
+  expect(prompt).toContain("both the original task prompt and the member's full prior response")
+  expect(prompt).toContain("avoid repeating completed work or any tool call identified as problematic")
+  expect(prompt).toContain("Ordinary recommendations for future action do not by themselves")
+  expect(prompt).toContain("Submit all needed retries together in ONE assistant message")
+  expect(prompt).toContain("start fresh calls without task_id")
+  expect(prompt).toContain("never retry any member more than once")
+  expect(prompt).toContain("continue even if some members still failed")
+  expect(prompt).toContain("retain useful evidence from an incomplete initial response")
 })

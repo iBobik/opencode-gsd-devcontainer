@@ -57,8 +57,9 @@ OpenCode, then run:
 /council Review this design and identify its main risks.
 ```
 
-One request can invoke every configured member plus the orchestrator, increasing
-latency and model cost.
+One request can invoke every configured member plus the orchestrator. A failed
+or empty member response is retried once, which can further increase latency and
+model cost.
 
 ## Defaults
 
@@ -119,7 +120,14 @@ written to the OpenCode log. Restart OpenCode after changing configuration.
 The plugin creates one hidden, model-pinned agent for each member and a hidden
 orchestrator. The orchestrator is instructed to submit all member Task calls in
 one assistant message so OpenCode can run them concurrently, then wait for the
-results and produce one response.
+results. It retries explicit failures and empty responses once in a second
+parallel round, using fresh sessions. When a response contains useful findings
+but stopped early, such as after reaching its step limit, the retry receives the
+original request and the full partial response. It is instructed to continue
+the unfinished work without repeating completed investigation or a known
+problematic tool call. The orchestrator then produces one response from all
+available evidence. Complete members are not retried, and failed retries are
+not attempted again.
 
 `minimum_successful_members` controls when the response labels an observation
 as consensus. It is not a completion gate: if fewer members return successfully,
@@ -130,6 +138,13 @@ Council members can read and search project files and use LSP. When `allow_web`
 is enabled, they can also fetch and search the web. They cannot edit files, run
 shell commands, delegate tasks, access external directories, or ask separate
 questions. The orchestrator can only delegate to council member agents.
+
+Members are limited to 12 agentic iterations. The orchestrator also has a
+bounded iteration budget based on the council size. OpenCode's repeated
+identical-tool-call guard is denied automatically for both agent types, so a
+stuck call fails instead of waiting for user approval. That failure is eligible
+for the orchestrator's single fresh retry. Useful partial results are retained
+for synthesis even if their continuation attempt also fails.
 
 The nested delegation requires a subagent depth of two. The plugin raises
 `subagent_depth` to at least `2` and preserves higher configured values.
@@ -150,6 +165,8 @@ diversity.
   and restart after correcting the file.
 - Responses are too slow or expensive: configure fewer members and lower the
   minimum accordingly.
+- A member repeatedly calls the same tool: OpenCode stops the repeated call and
+  the orchestrator retries that member once in a fresh session.
 
 ## Test
 
@@ -159,6 +176,6 @@ From the repository root, run:
 docker build -f opencode-council-plugin/test/Dockerfile opencode-council-plugin
 ```
 
-The Docker build tests configuration, permissions, agent registration, and
-plugin loading with the official OpenCode image. It does not call live models or
-guarantee provider-side concurrency.
+The Docker build tests configuration, permissions, step limits, retry policy,
+agent registration, and plugin loading with the official OpenCode image. It
+does not call live models or guarantee provider-side concurrency.

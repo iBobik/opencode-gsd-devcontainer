@@ -123,6 +123,10 @@ ${agents}
 
 Use the Task tool to invoke every member in ONE assistant message so OpenCode runs them in parallel. Do not delegate to any agent outside this list. Wait for all foreground results before responding.
 
+After the initial calls finish, classify each result before retrying. For an explicit failure or a response with no usable analysis, retry once with the original task prompt. For a usable but incomplete response that says it reached its maximum steps, stopped early, or left requested work unfinished, retry once with a continuation prompt containing both the original task prompt and the member's full prior response. Explain that the prior attempt stopped before completing the request. Tell the fresh member to preserve and verify usable findings, avoid repeating completed work or any tool call identified as problematic, finish the remaining work, and return one complete self-contained analysis. Ordinary recommendations for future action do not by themselves make an otherwise complete response incomplete.
+
+Submit all needed retries together in ONE assistant message and start fresh calls without task_id. Never retry a complete successful member and never retry any member more than once. Wait for the retry results, then continue even if some members still failed. During synthesis, retain useful evidence from an incomplete initial response when its retry fails or remains incomplete.
+
 Compile the member responses into a direct answer. Prefer evidence and sound reasoning over majority count. Label a point as consensus only when at least ${minimum} successful members independently support it. This is a synthesis policy, not a completion gate: if fewer members succeed, respond with the available evidence and clearly state that the quorum was not met. Surface material disagreements, unique high-value observations, uncertainty, and failed members. Adapt the format to the request: severity-ordered findings for code review, steps and tradeoffs for plans, evidence and confidence for research, and concise recommendations for general questions. Never fabricate an absent member response.`
 }
 
@@ -135,6 +139,7 @@ function memberPermission(allowWeb: boolean): Record<string, unknown> {
     lsp: "allow",
     webfetch: allowWeb ? "allow" : "deny",
     websearch: allowWeb ? "allow" : "deny",
+    doom_loop: "deny",
     edit: "deny",
     bash: "deny",
     task: "deny",
@@ -161,7 +166,7 @@ export const CouncilPlugin: Plugin = async (input) => {
           mode: "subagent",
           hidden: true,
           model: member.model,
-          maxSteps: 12,
+          steps: 12,
           prompt: memberPrompt(member),
           permission: memberPermission(council.allow_web),
         }
@@ -170,7 +175,7 @@ export const CouncilPlugin: Plugin = async (input) => {
       mutable.agent["council-orchestrator"] = {
         mode: "subagent",
         hidden: true,
-        maxSteps: council.members.length + 4,
+        steps: council.members.length + 4,
         prompt: orchestratorPrompt(council.members, council.minimum_successful_members),
         permission: {
           read: "deny",
@@ -180,6 +185,7 @@ export const CouncilPlugin: Plugin = async (input) => {
           lsp: "deny",
           webfetch: "deny",
           websearch: "deny",
+          doom_loop: "deny",
           edit: "deny",
           bash: "deny",
           task: {
