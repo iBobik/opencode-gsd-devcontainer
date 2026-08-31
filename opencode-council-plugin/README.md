@@ -19,6 +19,26 @@ and guardrails. Comparing their evidence can expose alternatives that one model
 misses. Agreement is not proof, however, and majority vote does not guarantee a
 correct answer.
 
+## Features
+
+- **Conversation-aware requests:** The orchestrator receives up to 20 recent
+  user and assistant text messages, capped at 24,000 characters, so requests
+  such as `/council review it` can refer to the current conversation. It turns
+  the request and relevant context into one self-contained task for the council.
+- **Independent investigation:** Every member receives the same task but
+  independently decides which project files or web sources are material to its
+  analysis. This preserves diversity in both reasoning and evidence gathering.
+- **Read-only operation:** Members can read and search the project, use LSP, and
+  optionally access the web, but cannot modify files or run shell commands.
+- **Parallel multi-model analysis:** Model-pinned members work concurrently and
+  do not see or conform to one another's responses.
+- **Evidence-based synthesis:** The orchestrator weighs evidence over majority
+  count and reports consensus, disagreements, unique observations, uncertainty,
+  and failed members.
+- **Bounded retries:** Failed, empty, or incomplete member responses receive at
+  most one fresh retry while useful partial findings remain available for the
+  final synthesis.
+
 ## Requirements
 
 - OpenCode with support for local TypeScript plugins.
@@ -56,10 +76,6 @@ OpenCode, then run:
 ```text
 /council Review this design and identify its main risks.
 ```
-
-One request can invoke every configured member plus the orchestrator. A failed
-or empty member response is retried once, which can further increase latency and
-model cost.
 
 ## Defaults
 
@@ -151,10 +167,23 @@ The nested delegation requires a subagent depth of two. The plugin raises
 
 ## Privacy and Cost
 
-The request is sent to every configured model provider. Project content read by
-a member may also be included in that provider request. Disable web access or
-choose fewer members when privacy, latency, or cost is more important than model
-diversity.
+The bounded recent conversation context is sent to the orchestrator's model
+provider. Synthetic messages, reasoning, ignored text, and raw tool output are
+excluded. The orchestrator uses the request and only the context it considers
+relevant to create one self-contained task; that derived task is then sent to
+every configured council member provider, not necessarily the complete recent
+conversation.
+
+Each member independently decides whether it needs additional project files or
+web sources. Content it reads may be included in requests to that member's
+provider. This independent evidence gathering is intentional: members should
+not be constrained to identical source material because investigative diversity
+is part of the council's value.
+
+One command can invoke every configured member plus the orchestrator, and a
+retry can add another provider request for an affected member. Disable web
+access or choose fewer members when privacy, latency, or cost is more important
+than model diversity.
 
 ## Troubleshooting
 
