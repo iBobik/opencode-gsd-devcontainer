@@ -32,10 +32,7 @@ You need Docker and VS Code with the Dev Containers extension.
 From your project root, download the dev container template:
 
 ```sh
-mkdir -p .devcontainer && \
-  curl -fsSL \
-    -o .devcontainer/devcontainer.json https://raw.githubusercontent.com/ibobik/opencode-gsd-devcontainer/master/template/.devcontainer/devcontainer.json \
-    -o .devcontainer/.gitignore https://raw.githubusercontent.com/ibobik/opencode-gsd-devcontainer/master/template/.devcontainer/.gitignore
+curl -fsSL --create-dirs -o .devcontainer/devcontainer.json https://raw.githubusercontent.com/ibobik/opencode-gsd-devcontainer/master/template/.devcontainer/devcontainer.json -o .devcontainer/.gitignore https://raw.githubusercontent.com/ibobik/opencode-gsd-devcontainer/master/template/.devcontainer/.gitignore
 ```
 
 Open the project in VS Code and choose **Reopen in Container**, then start
