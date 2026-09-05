@@ -25,7 +25,7 @@ type CouncilConfig = {
 const DEFAULT_CONFIG: CouncilConfig = {
   members: [
     { name: "claude", model: "ppq/claude-fable-5.1" },
-    { name: "gpt", model: "ppq/gpt-5.6-sol" },
+    { name: "gpt", model: "ppq/openai/gpt-6-astra" },
     { name: "gemini", model: "ppq/google/gemini-3.8-flash" },
     { name: "qwen", model: "ppq/qwen/qwen3.8-max" },
     { name: "kimi", model: "ppq/moonshotai/kimi-k3" },

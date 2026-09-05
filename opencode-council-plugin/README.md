@@ -84,7 +84,7 @@ The built-in council uses these current PPQ model IDs:
 | Member | Model |
 | --- | --- |
 | Claude | `ppq/claude-fable-5` |
-| GPT | `ppq/gpt-5.6-sol` |
+| GPT | `ppq/openai/gpt-6-astra` |
 | Gemini | `ppq/~google/gemini-pro-latest` |
 | Qwen | `ppq/qwen/qwen3.8-max` |
 | Kimi | `ppq/moonshotai/kimi-k3` |

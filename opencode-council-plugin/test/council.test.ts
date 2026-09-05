@@ -153,7 +153,7 @@ test("registers seven default members and allowlists only those members for task
   expect(registered).toHaveLength(7)
   for (const [member, modelFamily] of Object.entries({
     claude: "ppq/claude",
-    gpt: "ppq/gpt",
+    gpt: "ppq/openai/gpt",
     gemini: "ppq/google/gemini",
     qwen: "ppq/qwen/qwen",
     kimi: "ppq/moonshotai/kimi",
