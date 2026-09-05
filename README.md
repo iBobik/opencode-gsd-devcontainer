@@ -23,7 +23,7 @@ when you need reproducible builds.
 | [GSD](https://opengsd.net) | Autonomous planning, implementation, and verification |
 | Browser tooling | Chromium, Playwright, agent-browser, and gsd-browser |
 | [Tinfoil Proxy](https://tinfoil.sh) | Preinstalled proxy for accessing private models in trusted execution environments (TEEs) |
-| Terminal tooling | tmux, the Skills CLI, and the agent-browser dogfood skill |
+| Terminal tooling | GitHub CLI, tmux, the Skills CLI, and the agent-browser dogfood skill |
 
 ## Quick Start
 
