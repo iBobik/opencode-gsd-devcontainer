@@ -14,8 +14,15 @@ FROM mcr.microsoft.com/devcontainers/typescript-node:4-24-trixie
 # --- System deps -------------------------------------------------------------
 # tmux    : long-running devservers driven by agent-browser.
 # chromium: shared browser for agent-browser + playwright (no 2nd download).
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends tmux chromium sudo \
+# gh      : GitHub CLI from its official repository; Debian's version is outdated.
+RUN mkdir -p -m 755 /etc/apt/keyrings /etc/apt/sources.list.d \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+         -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && printf 'deb [arch=%s signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\n' "$(dpkg --print-architecture)" \
+         > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends tmux chromium sudo gh \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -73,6 +80,7 @@ RUN opencode --version \
     && gsd-core --help > /dev/null \
     && chromium --version \
     && tmux -V \
+    && gh --version \
     && command -v tinfoil-proxy \
     && if [ "$BUILDPLATFORM" = "$TARGETPLATFORM" ]; then \
          /home/node/.gsd-browser/chromium-wrapper.sh --headless --no-sandbox --disable-gpu --dump-dom about:blank | grep -q '<html>'; \
