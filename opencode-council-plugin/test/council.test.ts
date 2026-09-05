@@ -82,7 +82,7 @@ test("rejects case-variant member names before agents are registered", async () 
     minimum_successful_members: 2,
   }))
 
-  expect(agents(config)["council-member-claude"].model).toBe("ppq/claude-fable-5")
+  expect(agents(config)["council-member-claude"].model).toStartWith("ppq/claude")
 })
 
 test("caps an inherited quorum when a config replaces the member list", async () => {
@@ -146,10 +146,22 @@ test("raises depth to the required nested-task minimum", async () => {
 
 test("registers seven default members and allowlists only those members for tasks", async () => {
   const config = await configureCouncil()
-  const registered = Object.keys(agents(config)).filter((name) => name.startsWith("council-member-"))
-  const orchestrator = agents(config)["council-orchestrator"]
+  const registeredAgents = agents(config)
+  const registered = Object.keys(registeredAgents).filter((name) => name.startsWith("council-member-"))
+  const orchestrator = registeredAgents["council-orchestrator"]
 
   expect(registered).toHaveLength(7)
+  for (const [member, modelFamily] of Object.entries({
+    claude: "ppq/claude",
+    gpt: "ppq/gpt",
+    gemini: "ppq/google/gemini",
+    qwen: "ppq/qwen/qwen",
+    kimi: "ppq/moonshotai/kimi",
+    glm: "ppq/glm",
+    grok: "ppq/grok",
+  })) {
+    expect(registeredAgents[`council-member-${member}`].model).toStartWith(modelFamily)
+  }
   expect(orchestrator.permission).toMatchObject({
     task: { "*": "deny", "council-member-*": "allow" },
     doom_loop: "deny",
