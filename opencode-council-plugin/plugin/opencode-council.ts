@@ -27,7 +27,7 @@ const DEFAULT_CONFIG: CouncilConfig = {
     { name: "claude", model: "ppq/claude-fable-5.1" },
     { name: "gpt", model: "ppq/openai/gpt-6-astra" },
     { name: "gemini", model: "ppq/google/gemini-3.8-flash" },
-    { name: "qwen", model: "ppq/qwen/qwen3.8-max" },
+    { name: "qwen", model: "ppq/qwen/qwen3.8-max-0902" },
     { name: "kimi", model: "ppq/moonshotai/kimi-k3" },
     { name: "glm", model: "ppq/glm-5.3" },
     { name: "grok", model: "ppq/grok-4.6" },
