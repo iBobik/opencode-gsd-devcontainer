@@ -22,4 +22,5 @@ COPY plugin/opencode-council.ts /root/.config/opencode/plugins/opencode-council.
 RUN opencode debug config > /tmp/config.json \
     && grep -q 'council-orchestrator' /tmp/config.json \
     && grep -q 'council-member-claude' /tmp/config.json \
-    && grep -q '"council"' /tmp/config.json
+    && grep -q '"council"' /tmp/config.json \
+    && grep -q '"council-last"' /tmp/config.json

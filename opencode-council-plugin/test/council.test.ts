@@ -42,6 +42,83 @@ async function runCouncilCommand(messages: unknown, prompt = "User request for t
   }
 }
 
+async function runCouncilLastCommand(fixture: {
+  children: Record<string, unknown>
+  messages: Record<string, unknown>
+  childrenError?: Error
+}, request = "What can we conclude?", inspectMessage?: (message: Record<string, unknown>) => void): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "opencode-council-last-test-"))
+  const worktree = join(root, "project")
+  const previousConfigHome = process.env.XDG_CONFIG_HOME
+
+  try {
+    await mkdir(join(worktree, ".opencode"), { recursive: true })
+    process.env.XDG_CONFIG_HOME = join(root, "config")
+    const client = {
+      session: {
+        children: async ({ path }: { path: { id: string } }) => {
+          if (fixture.childrenError) throw fixture.childrenError
+          return { data: fixture.children[path.id] ?? [] }
+        },
+        messages: async ({ path }: { path: { id: string } }) => ({ data: fixture.messages[path.id] ?? [] }),
+      },
+    }
+    const hooks = await CouncilPlugin({ worktree, client } as never)
+    const parts = [{ type: "text" as const, text: request }]
+    await hooks["command.execute.before"]?.({
+      command: "council-last",
+      sessionID: "main-session",
+      arguments: request,
+    }, { parts } as never)
+    const message: Record<string, unknown> = {}
+    await hooks["chat.message"]?.({ sessionID: "main-session" }, { message, parts } as never)
+    const completed = { text: "I should debug the plugin instead." }
+    await hooks["experimental.text.complete"]?.({
+      sessionID: "main-session",
+      messageID: "assistant-message",
+      partID: "text-part",
+    }, completed)
+    message.completedText = completed.text
+    inspectMessage?.(message)
+    return parts[0].text
+  } finally {
+    if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME
+    else process.env.XDG_CONFIG_HOME = previousConfigHome
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
+function session(id: string, created: number, title = id): unknown {
+  return { id, title, time: { created, updated: created } }
+}
+
+function agentMessages(agent: string, assistant: {
+  text?: string
+  finish?: string
+  completed?: number
+  error?: unknown
+  extraParts?: unknown[]
+} = {}): unknown[] {
+  return [
+    {
+      info: { role: "user", agent, time: { created: 1 } },
+      parts: [{ type: "text", text: "Investigate the design." }],
+    },
+    {
+      info: {
+        role: "assistant",
+        time: { created: 2, ...(assistant.completed ? { completed: assistant.completed } : {}) },
+        ...(assistant.finish ? { finish: assistant.finish } : {}),
+        ...(assistant.error ? { error: assistant.error } : {}),
+      },
+      parts: [
+        ...(assistant.text ? [{ type: "text", text: assistant.text }] : []),
+        ...(assistant.extraParts ?? []),
+      ],
+    },
+  ]
+}
+
 async function configureCouncil(projectConfig?: string, initialConfig: GeneratedConfig = {}, warnings?: string[]): Promise<GeneratedConfig> {
   const root = await mkdtemp(join(tmpdir(), "opencode-council-test-"))
   const worktree = join(root, "project")
@@ -168,7 +245,10 @@ test("registers seven default members and allowlists only those members for task
   })
   expect(orchestrator.steps).toBe(11)
   expect(orchestrator.maxSteps).toBeUndefined()
-  expect(config.command).toMatchObject({ council: { agent: "council-orchestrator" } })
+  expect(config.command).toMatchObject({
+    council: { agent: "council-orchestrator" },
+    "council-last": { template: "Recover the latest council run.\n$ARGUMENTS" },
+  })
 })
 
 test("retries failures and continues incomplete responses once in fresh parallel calls", async () => {
@@ -247,4 +327,131 @@ test("keeps the original request when session history cannot be read", async () 
   } finally {
     console.warn = warning
   }
+})
+
+test("recovers every member attempt from the latest saved council run", async () => {
+  const prompt = await runCouncilLastCommand({
+    children: {
+      "main-session": [session("old-orchestrator", 1), session("unrelated", 2), session("new-orchestrator", 3)],
+      "old-orchestrator": [session("old-claude", 1)],
+      "new-orchestrator": [session("new-claude", 4), session("new-claude-retry", 5), session("new-gpt", 6)],
+    },
+    messages: {
+      "old-orchestrator": agentMessages("council-orchestrator"),
+      unrelated: agentMessages("general"),
+      "new-orchestrator": agentMessages("council-orchestrator"),
+      "old-claude": agentMessages("council-member-claude", { text: "obsolete finding", finish: "stop" }),
+      "new-claude": agentMessages("council-member-claude", { text: "partial Claude finding" }),
+      "new-claude-retry": agentMessages("council-member-claude", { text: "completed Claude finding", finish: "stop" }),
+      "new-gpt": agentMessages("council-member-gpt", {
+        text: "useful GPT fragment",
+        error: { name: "MessageAbortedError", data: { message: "interrupted" } },
+      }),
+    },
+  }, "Which risks remain?")
+
+  expect(prompt).toContain("Which risks remain?")
+  expect(prompt).toContain('"member": "claude"')
+  expect(prompt).toContain('"attempt": 1')
+  expect(prompt).toContain('"attempt": 2')
+  expect(prompt).toContain('"status": "incomplete"')
+  expect(prompt).toContain('"status": "completed"')
+  expect(prompt).toContain('"status": "error"')
+  expect(prompt).toContain("partial Claude finding")
+  expect(prompt).toContain("completed Claude finding")
+  expect(prompt).toContain("useful GPT fragment")
+  expect(prompt).toContain("MessageAbortedError: interrupted")
+  expect(prompt).not.toContain("obsolete finding")
+})
+
+test("excludes private, synthetic, ignored, tool, and non-council content from recovery", async () => {
+  const prompt = await runCouncilLastCommand({
+    children: {
+      "main-session": [session("orchestrator", 1)],
+      orchestrator: [session("claude", 2), session("explorer", 3)],
+    },
+    messages: {
+      orchestrator: agentMessages("council-orchestrator"),
+      claude: agentMessages("council-member-claude", {
+        text: "public conclusion",
+        finish: "stop",
+        extraParts: [
+          { type: "reasoning", text: "private reasoning" },
+          { type: "text", text: "synthetic note", synthetic: true },
+          { type: "text", text: "ignored note", ignored: true },
+          { type: "tool", state: { status: "completed", output: "raw tool output" } },
+        ],
+      }),
+      explorer: agentMessages("explore", { text: "unrelated analysis", finish: "stop" }),
+    },
+  })
+
+  expect(prompt).toContain("public conclusion")
+  expect(prompt).not.toContain("private reasoning")
+  expect(prompt).not.toContain("synthetic note")
+  expect(prompt).not.toContain("ignored note")
+  expect(prompt).not.toContain("raw tool output")
+  expect(prompt).not.toContain("unrelated analysis")
+})
+
+test("uses a default recovery request when council-last has no arguments", async () => {
+  const prompt = await runCouncilLastCommand({
+    children: { "main-session": [session("orchestrator", 1)], orchestrator: [session("member", 2)] },
+    messages: {
+      orchestrator: agentMessages("council-orchestrator"),
+      member: agentMessages("council-member-claude", { text: "finding", finish: "stop" }),
+    },
+  }, "")
+
+  expect(prompt).toContain("Present each member's recovered conclusions separately")
+})
+
+test("reports when no recoverable council run exists", async () => {
+  let message: Record<string, unknown> = {}
+  const prompt = await runCouncilLastCommand({
+    children: { "main-session": [session("unrelated", 1)] },
+    messages: { unrelated: agentMessages("general", { text: "not council", finish: "stop" }) },
+  }, "What can we conclude?", (value) => { message = value })
+
+  expect(prompt).toBe("No recoverable council member sessions were found in the current session. Command /council-last can only recover a council run from the same parent session.")
+  expect(message.system).toContain("terminal command result")
+  expect(message.tools).toMatchObject({ read: false, edit: false, bash: false, task: false })
+  expect(message.completedText).toBe(prompt)
+})
+
+test("turns session API failures into a safe recovery response", async () => {
+  const warning = console.warn
+  console.warn = () => {}
+  try {
+    let message: Record<string, unknown> = {}
+    const prompt = await runCouncilLastCommand({
+      children: {},
+      messages: {},
+      childrenError: new Error("database unavailable"),
+    }, "What can we conclude?", (value) => { message = value })
+    expect(prompt).toBe("Council recovery failed while reading saved sessions: database unavailable")
+    expect(message.system).toContain("Reply with exactly that text and nothing else")
+    expect(message.tools).toMatchObject({ read: false, edit: false, bash: false, task: false })
+    expect(message.completedText).toBe(prompt)
+  } finally {
+    console.warn = warning
+  }
+})
+
+test("bounds oversized recovered transcripts and marks truncation", async () => {
+  const prompt = await runCouncilLastCommand({
+    children: { "main-session": [session("orchestrator", 1)], orchestrator: [session("member", 2)] },
+    messages: {
+      orchestrator: agentMessages("council-orchestrator"),
+      member: agentMessages("council-member-claude", {
+        text: "start-marker-" + "x".repeat(120_000) + "-end-marker",
+        finish: "stop",
+      }),
+    },
+  })
+
+  expect(prompt).toContain("start-marker-")
+  expect(prompt).toContain("[recovered transcript truncated]")
+  expect(prompt).toContain("-end-marker")
+  expect(prompt.length).toBeLessThan(97_000)
 })

@@ -4,6 +4,7 @@ Adds a read-only, multi-model council command to OpenCode:
 
 ```text
 /council <prompt>
+/council-last [question or continuation request]
 ```
 
 The plugin asks models from different families to analyze the same request and
@@ -38,6 +39,10 @@ correct answer.
 - **Bounded retries:** Failed, empty, or incomplete member responses receive at
   most one fresh retry while useful partial findings remain available for the
   final synthesis.
+- **Recovery after interruption:** `/council-last` reads the persisted member
+  sessions from the latest council run in the current conversation. It makes
+  completed, partial, and failed attempts available to the current main agent,
+  including after OpenCode has restarted.
 
 ## Requirements
 
@@ -75,6 +80,21 @@ OpenCode, then run:
 
 ```text
 /council Review this design and identify its main risks.
+```
+
+If the council was interrupted, reopen the same parent conversation and run:
+
+```text
+/council-last
+```
+
+This presents the recovered conclusions separately and synthesizes them. An
+argument asks the current main agent a specific question or tells it how to
+continue:
+
+```text
+/council-last Which risks were supported by evidence from at least two members?
+/council-last Continue the implementation using the recovered findings.
 ```
 
 ## Defaults
@@ -145,6 +165,18 @@ problematic tool call. The orchestrator then produces one response from all
 available evidence. Complete members are not retried, and failed retries are
 not attempted again.
 
+OpenCode persists the orchestrator and members as nested child sessions.
+`/council-last` locates the newest orchestrator in the current parent session
+that has council member children, then reads every member attempt, including
+fresh retry sessions. No plugin-specific recovery state is required, so saved
+responses remain recoverable after a process restart. Visible user and assistant
+text is restored; reasoning, tool output, synthetic text, and ignored text are
+excluded. Recovered text is treated as quoted, untrusted source material.
+
+Recovery is limited to the current parent conversation. If OpenCode restarts,
+reopen that conversation before using `/council-last`. Very large recovered
+transcripts are capped at 96,000 characters and visibly marked where truncated.
+
 `minimum_successful_members` controls when the response labels an observation
 as consensus. It is not a completion gate: if fewer members return successfully,
 the orchestrator still responds with the available evidence and identifies that
@@ -196,6 +228,9 @@ than model diversity.
   minimum accordingly.
 - A member repeatedly calls the same tool: OpenCode stops the repeated call and
   the orchestrator retries that member once in a fresh session.
+- `/council-last` finds no responses: reopen the parent conversation where the
+  original `/council` command ran. Runs from another conversation are not
+  searched automatically.
 
 ## Test
 
