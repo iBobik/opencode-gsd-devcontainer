@@ -30,9 +30,9 @@ test("pins catalog-backed GSD agents and preserves unrelated agents", async () =
       "gsd-executor": { model: "old/model" }, other: { model: "other/model" },
     } }
     await hooks.config?.(config as never)
-    expect(config.agent["gsd-planner"]).toMatchObject({ model: "openai/gpt-5.6-sol", prompt: "keep" })
+    expect(config.agent["gsd-planner"]).toMatchObject({ model: "openai/gpt-6-astra", prompt: "keep" })
     expect(config.agent["gsd-planner"].variant).toBeUndefined()
-    expect(config.agent["gsd-executor"].model).toBe("openai/gpt-5.6-terra")
+    expect(config.agent["gsd-executor"].model).toBe("openai/gpt-6-sol")
     expect(config.agent.other.model).toBe("other/model")
     await hooks.dispose?.()
   } finally {

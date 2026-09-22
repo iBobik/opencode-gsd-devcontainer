@@ -103,13 +103,13 @@ The built-in council uses these current PPQ model IDs:
 
 | Member | Model |
 | --- | --- |
-| Claude | `ppq/claude-fable-5` |
-| GPT | `ppq/openai/gpt-6-astra` |
-| Gemini | `ppq/~google/gemini-pro-latest` |
+| Claude | `ppq/claude-opus-5.5` |
+| GPT | `ppq/gpt-6-sol` |
+| Gemini | `ppq/google/gemini-3.8-flash` |
 | Qwen | `ppq/qwen/qwen3.8-max-0902` |
 | Kimi | `ppq/moonshotai/kimi-k3` |
 | GLM | `ppq/glm-5.3` |
-| Grok | `ppq/grok-4.6` |
+| Grok | `ppq/x-ai/grok-4.7` |
 
 The default minimum for consensus is two successful members. Web access is
 enabled for members by default.
@@ -129,8 +129,8 @@ Each later file can override `members`, `minimum_successful_members`, or
 ```json
 {
   "members": [
-    { "name": "claude", "model": "ppq/claude-fable-5" },
-    { "name": "gemini", "model": "ppq/~google/gemini-pro-latest" }
+    { "name": "claude", "model": "ppq/claude-opus-5.5" },
+    { "name": "gemini", "model": "ppq/google/gemini-3.8-flash" }
   ],
   "minimum_successful_members": 2,
   "allow_web": false

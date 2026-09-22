@@ -63,9 +63,9 @@ The current profile mappings are:
 
 | Profile | Heavy | Standard | Light |
 | --- | --- | --- | --- |
-| `claude` | `anthropic/claude-opus-5` | `anthropic/claude-sonnet-5` | `anthropic/claude-haiku-4-5` |
-| `gpt` | `openai/gpt-5.6-sol` | `openai/gpt-5.6-terra` | `openai/gpt-5.6-luna` |
-| `mixed` | `ppq/claude-opus-5` | `ppq/gpt-5.6-sol` | `ppq/claude-haiku-4.5` |
+| `claude` | `anthropic/claude-opus-5-5` | `anthropic/claude-sonnet-5` | `anthropic/claude-haiku-4-5` |
+| `gpt` | `openai/gpt-6-astra` | `openai/gpt-6-sol` | `openai/gpt-6-luna` |
+| `mixed` | `ppq/claude-opus-5.5` | `ppq/gpt-6-sol` | `ppq/claude-haiku-4.5` |
 
 Model IDs are provider catalog entries and may change as providers update their
 catalogs.

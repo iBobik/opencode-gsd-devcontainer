@@ -24,13 +24,13 @@ type CouncilConfig = {
 
 const DEFAULT_CONFIG: CouncilConfig = {
   members: [
-    { name: "claude", model: "ppq/claude-fable-5.1" },
-    { name: "gpt", model: "ppq/openai/gpt-6-astra" },
+    { name: "claude", model: "ppq/claude-opus-5.5" },
+    { name: "gpt", model: "ppq/gpt-6-sol" },
     { name: "gemini", model: "ppq/google/gemini-3.8-flash" },
     { name: "qwen", model: "ppq/qwen/qwen3.8-max-0902" },
     { name: "kimi", model: "ppq/moonshotai/kimi-k3" },
     { name: "glm", model: "ppq/glm-5.3" },
-    { name: "grok", model: "ppq/grok-4.6" },
+    { name: "grok", model: "ppq/x-ai/grok-4.7" },
   ],
   minimum_successful_members: 2,
   allow_web: true,
