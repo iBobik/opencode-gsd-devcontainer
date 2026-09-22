@@ -19,10 +19,14 @@
     },
     "external_directory": {
       "/tmp/*": "allow",
-      "~/.config/opencode/agents/*": "allow"
+      "~/.gsd/*": "allow",
+      "~/.config/opencode/agents/*": "allow",
+      "~/.config/opencode/skills/*": "allow"
     },
     "read": {
-      "~/.config/opencode/agents/*": "allow"
+      "~/.gsd/*": "allow",
+      "~/.config/opencode/agents/*": "allow",
+      "~/.config/opencode/skills/*": "allow"
     }
   }
 }
