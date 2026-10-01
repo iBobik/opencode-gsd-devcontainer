@@ -104,11 +104,11 @@ The built-in council uses these current PPQ model IDs:
 | Member | Model |
 | --- | --- |
 | Claude | `ppq/claude-opus-5.5` |
-| GPT | `ppq/gpt-6-sol` |
+| GPT | `ppq/openai/gpt-6.1-sol` |
 | Gemini | `ppq/google/gemini-3.8-flash` |
-| Qwen | `ppq/qwen/qwen3.8-max-0902` |
+| Qwen | `ppq/qwen/qwen3.8-max-prime` |
 | Kimi | `ppq/moonshotai/kimi-k3` |
-| GLM | `ppq/glm-5.3` |
+| GLM | `ppq/z-ai/glm-5.3-prime` |
 | Grok | `ppq/x-ai/grok-4.7` |
 
 The default minimum for consensus is two successful members. Web access is

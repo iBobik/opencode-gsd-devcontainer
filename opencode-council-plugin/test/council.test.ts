@@ -230,11 +230,11 @@ test("registers seven default members and allowlists only those members for task
   expect(registered).toHaveLength(7)
   for (const [member, model] of Object.entries({
     claude: "ppq/claude-opus-5.5",
-    gpt: "ppq/gpt-6-sol",
+    gpt: "ppq/openai/gpt-6.1-sol",
     gemini: "ppq/google/gemini-3.8-flash",
-    qwen: "ppq/qwen/qwen3.8-max-0902",
+    qwen: "ppq/qwen/qwen3.8-max-prime",
     kimi: "ppq/moonshotai/kimi-k3",
-    glm: "ppq/glm-5.3",
+    glm: "ppq/z-ai/glm-5.3-prime",
     grok: "ppq/x-ai/grok-4.7",
   })) {
     expect(registeredAgents[`council-member-${member}`].model).toBe(model)

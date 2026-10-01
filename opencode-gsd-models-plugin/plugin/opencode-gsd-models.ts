@@ -12,17 +12,17 @@ type Tier = "heavy" | "standard" | "light"
 const PROFILE_MODELS: Record<Profile, Record<Tier, string>> = {
   claude: {
     heavy: "anthropic/claude-opus-5-5",
-    standard: "anthropic/claude-sonnet-5",
+    standard: "anthropic/claude-sonnet-5-5",
     light: "anthropic/claude-haiku-4-5",
   },
   gpt: {
     heavy: "openai/gpt-6-astra",
-    standard: "openai/gpt-6-sol",
+    standard: "openai/gpt-6.1-sol",
     light: "openai/gpt-6-luna",
   },
   mixed: {
     heavy: "ppq/claude-opus-5.5",
-    standard: "ppq/gpt-6-sol",
+    standard: "ppq/openai/gpt-6.1-sol",
     light: "ppq/claude-haiku-4.5",
   },
 }

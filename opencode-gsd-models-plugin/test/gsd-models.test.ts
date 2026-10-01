@@ -12,7 +12,12 @@ test("parses only GSD_MODELS_PROFILE from dotenv syntax", () => {
   expect(parseProfile("genius")).toBeUndefined()
 })
 
-test("pins catalog-backed GSD agents and preserves unrelated agents", async () => {
+for (const [profile, models] of Object.entries({
+  claude: ["anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-4-5"],
+  gpt: ["openai/gpt-6-astra", "openai/gpt-6.1-sol", "openai/gpt-6-luna"],
+  mixed: ["ppq/claude-opus-5.5", "ppq/openai/gpt-6.1-sol", "ppq/claude-haiku-4.5"],
+})) {
+test(`pins all ${profile} tiers and preserves unrelated agents`, async () => {
   const root = await mkdtemp(join(tmpdir(), "opencode-gsd-models-test-"))
   const oldConfig = process.env.OPENCODE_CONFIG
   const oldProfile = process.env.GSD_MODELS_PROFILE
@@ -21,18 +26,22 @@ test("pins catalog-backed GSD agents and preserves unrelated agents", async () =
     await writeFile(join(root, "config", "opencode.json"), "{}")
     await writeFile(join(root, "config", "gsd-core", "bin", "shared", "model-catalog.json"), JSON.stringify({ agents: {
       "gsd-planner": { routingTier: "heavy" }, "gsd-executor": { routingTier: "standard" },
+      "gsd-mapper": { routingTier: "light" },
     } }))
     process.env.OPENCODE_CONFIG = join(root, "config", "opencode.json")
-    process.env.GSD_MODELS_PROFILE = "gpt"
+    process.env.GSD_MODELS_PROFILE = profile
     const hooks = await GsdModelsPlugin({ worktree: root, directory: root, client: { app: { log: async () => ({}) }, tui: { showToast: async () => ({}) } } } as never)
     const config: Record<string, any> = { agent: {
       "gsd-planner": { model: "old/model", variant: "high", prompt: "keep" },
       "gsd-executor": { model: "old/model" }, other: { model: "other/model" },
+      "gsd-mapper": { model: "old/model", variant: "high" },
     } }
     await hooks.config?.(config as never)
-    expect(config.agent["gsd-planner"]).toMatchObject({ model: "openai/gpt-6-astra", prompt: "keep" })
+    expect(config.agent["gsd-planner"]).toMatchObject({ model: models[0], prompt: "keep" })
     expect(config.agent["gsd-planner"].variant).toBeUndefined()
-    expect(config.agent["gsd-executor"].model).toBe("openai/gpt-6-sol")
+    expect(config.agent["gsd-executor"].model).toBe(models[1])
+    expect(config.agent["gsd-mapper"].model).toBe(models[2])
+    expect(config.agent["gsd-mapper"].variant).toBeUndefined()
     expect(config.agent.other.model).toBe("other/model")
     await hooks.dispose?.()
   } finally {
@@ -43,6 +52,7 @@ test("pins catalog-backed GSD agents and preserves unrelated agents", async () =
     await rm(root, { recursive: true, force: true })
   }
 })
+}
 
 test("invalid explicit profiles stay in inherit mode", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencode-gsd-models-test-"))
