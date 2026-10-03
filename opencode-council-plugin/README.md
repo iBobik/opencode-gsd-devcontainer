@@ -105,7 +105,7 @@ The built-in council uses these current PPQ model IDs:
 | --- | --- |
 | Claude | `ppq/claude-opus-5.5` |
 | GPT | `ppq/openai/gpt-6.1-sol` |
-| Gemini | `ppq/google/gemini-3.8-flash` |
+| Gemini | `ppq/google/gemini-4.1-pro` |
 | Qwen | `ppq/qwen/qwen3.8-max-prime` |
 | Kimi | `ppq/moonshotai/kimi-k3` |
 | GLM | `ppq/z-ai/glm-5.3-prime` |
@@ -130,7 +130,7 @@ Each later file can override `members`, `minimum_successful_members`, or
 {
   "members": [
     { "name": "claude", "model": "ppq/claude-opus-5.5" },
-    { "name": "gemini", "model": "ppq/google/gemini-3.8-flash" }
+    { "name": "gemini", "model": "ppq/google/gemini-4.1-pro" }
   ],
   "minimum_successful_members": 2,
   "allow_web": false

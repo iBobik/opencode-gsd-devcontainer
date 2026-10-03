@@ -66,6 +66,8 @@ The current profile mappings are:
 | `claude` | `anthropic/claude-opus-5-5` | `anthropic/claude-sonnet-5-5` | `anthropic/claude-haiku-4-5` |
 | `gpt` | `openai/gpt-6-astra` | `openai/gpt-6.1-sol` | `openai/gpt-6-luna` |
 | `mixed` | `ppq/claude-opus-5.5` | `ppq/openai/gpt-6.1-sol` | `ppq/claude-haiku-4.5` |
+| `go` | `opencode-go/kimi-k3` | `opencode-go/kimi-k2.7-code` | `opencode-go/gpt-6-luna` |
+| `go-free` | `opencode-go/longcat-2.5-preview-free` | `opencode-go/space-bunny-free` | `opencode-go/space-bunny-free` |
 
 Model IDs are provider catalog entries and may change as providers update their
 catalogs.

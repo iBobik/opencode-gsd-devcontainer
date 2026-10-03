@@ -4,7 +4,7 @@ import { watch, type FSWatcher } from "node:fs"
 import * as path from "node:path"
 import * as os from "node:os"
 
-const PROFILES = ["claude", "gpt", "mixed"] as const
+const PROFILES = ["claude", "gpt", "mixed", "go", "go-free"] as const
 type Profile = (typeof PROFILES)[number]
 type Source = "environment" | "project .env" | "automatic" | "inherit"
 type Tier = "heavy" | "standard" | "light"
@@ -24,6 +24,16 @@ const PROFILE_MODELS: Record<Profile, Record<Tier, string>> = {
     heavy: "ppq/claude-opus-5.5",
     standard: "ppq/openai/gpt-6.1-sol",
     light: "ppq/claude-haiku-4.5",
+  },
+  go: {
+    heavy: "opencode-go/kimi-k3",
+    standard: "opencode-go/kimi-k2.7-code",
+    light: "opencode-go/gpt-6-luna",
+  },
+  "go-free": {
+    heavy: "opencode-go/longcat-2.5-preview-free",
+    standard: "opencode-go/space-bunny-free",
+    light: "opencode-go/space-bunny-free",
   },
 }
 
@@ -151,7 +161,7 @@ function statusText(profile: Profile | undefined, source: Source, requested?: st
   const active = profile ?? "inherit"
   const lines = [
     `GSD model profile: ${active} (${source}).`,
-    "Available profiles: claude, gpt, mixed.",
+    "Available profiles: claude, gpt, mixed, go, go-free.",
     "Nothing was changed. Set GSD_MODELS_PROFILE before restarting OpenCode.",
     "Temporary: GSD_MODELS_PROFILE=gpt opencode",
     "Shell: export GSD_MODELS_PROFILE=gpt && opencode",

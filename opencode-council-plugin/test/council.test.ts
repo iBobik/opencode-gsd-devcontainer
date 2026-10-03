@@ -231,7 +231,7 @@ test("registers seven default members and allowlists only those members for task
   for (const [member, model] of Object.entries({
     claude: "ppq/claude-opus-5.5",
     gpt: "ppq/openai/gpt-6.1-sol",
-    gemini: "ppq/google/gemini-3.8-flash",
+    gemini: "ppq/google/gemini-4.1-pro",
     qwen: "ppq/qwen/qwen3.8-max-prime",
     kimi: "ppq/moonshotai/kimi-k3",
     glm: "ppq/z-ai/glm-5.3-prime",
