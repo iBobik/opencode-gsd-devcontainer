@@ -9,7 +9,6 @@
   ```sh
   docker build -f opencode-ppq-plugin/test/Dockerfile opencode-ppq-plugin
   docker build -f opencode-council-plugin/test/Dockerfile opencode-council-plugin
-  docker build -f opencode-gsd-models-plugin/test/Dockerfile opencode-gsd-models-plugin
   ```
 
 - A plugin test passes only when its `docker build` completes successfully. Do not replace these builds with direct host commands, even for a single test.

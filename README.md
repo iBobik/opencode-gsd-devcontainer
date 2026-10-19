@@ -19,7 +19,6 @@ when you need reproducible builds.
 | [PPQ provider plugin](opencode-ppq-plugin/README.md) | Adds the live [PPQ](https://ppq.ai) model catalog and authentication |
 | [OpenCode usage plugin](https://www.npmjs.com/package/@howaboua/opencode-usage-plugin) | Reports token usage and estimated model cost |
 | [Council plugin](opencode-council-plugin/README.md) | Asks multiple model families to analyze the same request and synthesizes their responses |
-| [GSD model profiles](opencode-gsd-models-plugin/README.md) | Routes GSD agents to appropriate models for each workload tier |
 | [GSD](https://opengsd.net) | Autonomous planning, implementation, and verification |
 | Browser tooling | Chromium, Playwright, agent-browser, and gsd-browser |
 | [Tinfoil Proxy](https://tinfoil.sh) | Preinstalled proxy for accessing private models in trusted execution environments (TEEs) |
@@ -61,20 +60,13 @@ for installation, credential precedence, and failure behavior.
 The included [`@howaboua/opencode-usage-plugin`](https://www.npmjs.com/package/@howaboua/opencode-usage-plugin)
 reports token usage and estimated cost for OpenCode sessions.
 
-### GSD Model Profiles
+### GSD Model Profiles Removed
 
-Set `GSD_MODELS_PROFILE` to `claude`, `gpt`, or `mixed` before starting
-OpenCode. If it is unset, the plugin selects a profile from detected provider
-credentials or lets GSD agents inherit the session model.
-
-```sh
-GSD_MODELS_PROFILE=gpt opencode
-```
-
-Run `/gsd-models-profile` to report the active selection. The command does not
-change configuration. See the
-[GSD model profiles guide](opencode-gsd-models-plugin/README.md) for model
-mappings and exact precedence.
+The `opencode-gsd-models-plugin` has been removed and is no longer bundled.
+`GSD_MODELS_PROFILE` and `/gsd-models-profile` are no longer supported by this
+image. GSD agents inherit the session model with the supplied defaults.
+See the [GSD Core model profiles documentation](https://github.com/open-gsd/gsd-core/blob/main/docs/CONFIGURATION.md#model-profiles)
+for GSD's built-in profile configuration.
 
 ### Model Council
 
@@ -108,7 +100,6 @@ Run the plugin test suites from the repository root:
 ```sh
 docker build -f opencode-ppq-plugin/test/Dockerfile opencode-ppq-plugin
 docker build -f opencode-council-plugin/test/Dockerfile opencode-council-plugin
-docker build -f opencode-gsd-models-plugin/test/Dockerfile opencode-gsd-models-plugin
 ```
 
 ## Publishing

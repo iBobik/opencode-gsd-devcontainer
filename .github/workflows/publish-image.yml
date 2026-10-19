@@ -19,8 +19,6 @@ jobs:
         run: docker build -f opencode-ppq-plugin/test/Dockerfile opencode-ppq-plugin
       - name: Test council plugin
         run: docker build -f opencode-council-plugin/test/Dockerfile opencode-council-plugin
-      - name: Test GSD models plugin
-        run: docker build -f opencode-gsd-models-plugin/test/Dockerfile opencode-gsd-models-plugin
 
   image:
     needs: test-plugins

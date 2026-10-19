@@ -59,7 +59,6 @@ RUN curl -fsSL https://github.com/tinfoilsh/tinfoil-proxy/raw/main/install.sh | 
 COPY --chown=node:node opencode-global.json /home/node/.config/opencode/opencode.json
 COPY --chown=node:node opencode-ppq-plugin/plugin/opencode-ppq.ts /home/node/.config/opencode/plugins/
 COPY --chown=node:node opencode-council-plugin/plugin/opencode-council.ts /home/node/.config/opencode/plugins/
-COPY --chown=node:node opencode-gsd-models-plugin/plugin/opencode-gsd-models.ts /home/node/.config/opencode/plugins/
 COPY --chown=node:node gsd-defaults.json /home/node/.gsd/defaults.json
 
 # Chromium wrapper for gsd-browser (see GSD_BROWSER_BROWSER_PATH above).
