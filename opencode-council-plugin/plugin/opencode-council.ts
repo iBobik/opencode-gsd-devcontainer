@@ -25,8 +25,8 @@ type CouncilConfig = {
 const DEFAULT_CONFIG: CouncilConfig = {
   members: [
     { name: "claude", model: "ppq/claude-opus-5.5" },
-    { name: "gpt", model: "ppq/openai/gpt-6.1-sol" },
-    { name: "gemini", model: "ppq/google/gemini-4.1-pro" },
+    { name: "gpt", model: "ppq/gpt-6.1-sol" },
+    { name: "gemini", model: "ppq/google/gemini-4-argon" },
     { name: "qwen", model: "ppq/qwen/qwen3.8-max-prime" },
     { name: "kimi", model: "ppq/moonshotai/kimi-k3" },
     { name: "glm", model: "ppq/z-ai/glm-5.3-prime" },
@@ -450,6 +450,28 @@ export const CouncilPlugin: Plugin = async (input) => {
       if (command.command === "council") {
         const task = output.parts.find((part) => part.type === "subtask" && part.agent === "council-orchestrator")
         if (!task || task.type !== "subtask") return
+
+        // Validate at command time, after all config hooks have populated providers.
+        // Split only the first slash: PPQ model IDs may contain vendor prefixes.
+        const catalog = await input.client.config.providers({ throwOnError: true })
+        if (!catalog.data || !Array.isArray(catalog.data.providers)) {
+          throw new Error("Council could not validate models: OpenCode returned no provider catalog.")
+        }
+        const unavailable = council.members.filter((member) => {
+          const slash = member.model.indexOf("/")
+          const providerID = member.model.slice(0, slash)
+          const modelID = member.model.slice(slash + 1)
+          const provider = catalog.data.providers.find((entry) => entry.id === providerID)
+          return !provider || !Object.hasOwn(provider.models, modelID)
+        })
+        if (unavailable.length > 0) {
+          throw new Error(
+            "Council cannot start: these models are unavailable in OpenCode's loaded provider catalog:\n" +
+            unavailable.map((member) => `- ${member.name}: ${member.model}`).join("\n") +
+            "\nChoose exact IDs from /models in .opencode/council.json or your global council.json. " +
+            "If a provider is missing, connect it first. Restart OpenCode after changes."
+          )
+        }
 
         try {
           const response = await input.client.session.messages({

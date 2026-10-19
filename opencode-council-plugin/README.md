@@ -104,8 +104,8 @@ The built-in council uses these current PPQ model IDs:
 | Member | Model |
 | --- | --- |
 | Claude | `ppq/claude-opus-5.5` |
-| GPT | `ppq/openai/gpt-6.1-sol` |
-| Gemini | `ppq/google/gemini-4.1-pro` |
+| GPT | `ppq/gpt-6.1-sol` |
+| Gemini | `ppq/google/gemini-4-argon` |
 | Qwen | `ppq/qwen/qwen3.8-max-prime` |
 | Kimi | `ppq/moonshotai/kimi-k3` |
 | GLM | `ppq/z-ai/glm-5.3-prime` |
@@ -130,7 +130,7 @@ Each later file can override `members`, `minimum_successful_members`, or
 {
   "members": [
     { "name": "claude", "model": "ppq/claude-opus-5.5" },
-    { "name": "gemini", "model": "ppq/google/gemini-4.1-pro" }
+    { "name": "gemini", "model": "ppq/google/gemini-4-argon" }
   ],
   "minimum_successful_members": 2,
   "allow_web": false
@@ -150,6 +150,13 @@ Configuration rules:
 When `members` changes without an explicit minimum, the inherited minimum is
 capped at the new member count. An invalid file is ignored and a warning is
 written to the OpenCode log. Restart OpenCode after changing configuration.
+
+Before starting `/council`, the plugin checks every member against OpenCode's
+loaded provider catalog. If any model or provider is missing, the command stops
+with a list of unavailable members before launching tasks. Use exact IDs from
+`/models`: `ppq/` is the provider prefix, and everything after it must match the
+PPQ model ID, including any vendor prefix present in the catalog. Defaults are
+fixed IDs; the plugin does not silently substitute another model.
 
 ## How It Works
 

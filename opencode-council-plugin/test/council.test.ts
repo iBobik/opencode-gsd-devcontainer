@@ -6,7 +6,20 @@ import { CouncilPlugin } from "../plugin/opencode-council"
 
 type GeneratedConfig = Record<string, unknown>
 
-async function runCouncilCommand(messages: unknown, prompt = "User request for the council:\nreview it"): Promise<string> {
+// PPQ catalog IDs, separate from the plugin's provider-prefixed defaults.
+const catalogModelIDs = [
+  "claude-opus-5.5", "gpt-6.1-sol", "google/gemini-4-argon",
+  "qwen/qwen3.8-max-prime", "moonshotai/kimi-k3", "z-ai/glm-5.3-prime", "x-ai/grok-4.7",
+]
+const providerCatalog = {
+  providers: [{ id: "ppq", models: Object.fromEntries(catalogModelIDs.map((id) => [id, { id }])) }],
+}
+
+async function runCouncilCommand(
+  messages: unknown,
+  prompt = "User request for the council:\nreview it",
+  catalog: unknown = providerCatalog,
+): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "opencode-council-command-test-"))
   const worktree = join(root, "project")
   const previousConfigHome = process.env.XDG_CONFIG_HOME
@@ -15,6 +28,12 @@ async function runCouncilCommand(messages: unknown, prompt = "User request for t
     await mkdir(join(worktree, ".opencode"), { recursive: true })
     process.env.XDG_CONFIG_HOME = join(root, "config")
     const client = {
+      config: {
+        providers: async () => {
+          if (catalog instanceof Error) throw catalog
+          return { data: catalog }
+        },
+      },
       session: {
         messages: async () => {
           if (messages instanceof Error) throw messages
@@ -230,8 +249,8 @@ test("registers seven default members and allowlists only those members for task
   expect(registered).toHaveLength(7)
   for (const [member, model] of Object.entries({
     claude: "ppq/claude-opus-5.5",
-    gpt: "ppq/openai/gpt-6.1-sol",
-    gemini: "ppq/google/gemini-4.1-pro",
+    gpt: "ppq/gpt-6.1-sol",
+    gemini: "ppq/google/gemini-4-argon",
     qwen: "ppq/qwen/qwen3.8-max-prime",
     kimi: "ppq/moonshotai/kimi-k3",
     glm: "ppq/z-ai/glm-5.3-prime",
@@ -265,6 +284,30 @@ test("retries failures and continues incomplete responses once in fresh parallel
   expect(prompt).toContain("never retry any member more than once")
   expect(prompt).toContain("continue even if some members still failed")
   expect(prompt).toContain("retain useful evidence from an incomplete initial response")
+})
+
+test("rejects unavailable models before reading history or launching member tasks", async () => {
+  const catalog = {
+    providers: [{ id: "ppq", models: Object.fromEntries(
+      catalogModelIDs.filter((id) => id !== "gpt-6.1-sol" && id !== "google/gemini-4-argon")
+        .map((id) => [id, { id }]),
+    ) }],
+  }
+
+  await expect(runCouncilCommand(new Error("History must not be read"), undefined, catalog))
+    .rejects.toThrow("- gpt: ppq/gpt-6.1-sol\n- gemini: ppq/google/gemini-4-argon")
+})
+
+test("rejects missing providers with actionable configuration guidance", async () => {
+  await expect(runCouncilCommand([], undefined, { providers: [] }))
+    .rejects.toThrow("Choose exact IDs from /models in .opencode/council.json")
+})
+
+test("does not launch council tasks when catalog validation fails", async () => {
+  await expect(runCouncilCommand([], undefined, new Error("Catalog request failed")))
+    .rejects.toThrow("Catalog request failed")
+  await expect(runCouncilCommand([], undefined, null))
+    .rejects.toThrow("OpenCode returned no provider catalog")
 })
 
 test("adds recent visible conversation text to the council request", async () => {
