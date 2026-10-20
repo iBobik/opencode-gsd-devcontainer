@@ -90,7 +90,7 @@ RUN opencode --version \
 # GSD-Core full profile.
 # `--portable-hooks` makes the hooks work inside Docker.
 RUN gsd-core --opencode --global --portable-hooks \
-    && test "$(node -p 'const x=require(process.env.HOME + "/.gsd/defaults.json"); x.model_profile')" = "inherit" \
+    && test "$(node -p 'const x=require(process.env.HOME + "/.gsd/defaults.json"); x.model_profile')" = "balanced" \
     && test "$(node -p 'const x=require(process.env.HOME + "/.gsd/defaults.json"); x.resolve_model_ids')" = "omit" \
     && test -f /home/node/.config/opencode/gsd-core/bin/shared/model-catalog.json
 
