@@ -2,10 +2,13 @@
   "name": "@opencode-council-plugin/opencode-council",
   "private": true,
   "type": "module",
+  "exports": { ".": "./index.ts" },
   "scripts": {
     "test": "bun test"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "latest"
+    "@opencode/plugin": "2.1.1",
+    "typescript": "^5.8.2",
+    "@types/bun": "^1.3.0"
   }
 }

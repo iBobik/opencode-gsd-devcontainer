@@ -29,7 +29,7 @@ correct answer.
 - **Independent investigation:** Every member receives the same task but
   independently decides which project files or web sources are material to its
   analysis. This preserves diversity in both reasoning and evidence gathering.
-- **Read-only operation:** Members can read and search the project, use LSP, and
+- **Read-only operation:** Members can read and search the project and
   optionally access the web, but cannot modify files or run shell commands.
 - **Parallel multi-model analysis:** Model-pinned members work concurrently and
   do not see or conform to one another's responses.
@@ -46,7 +46,7 @@ correct answer.
 
 ## Requirements
 
-- OpenCode with support for local TypeScript plugins.
+- OpenCode 2.1.1 or newer with support for local TypeScript plugins.
 - Access to every configured model.
 - The [OpenCode PPQ Plugin](../opencode-ppq-plugin/README.md) when using the
   built-in PPQ members.
@@ -70,8 +70,19 @@ cp opencode-council-plugin/plugin/opencode-council.ts ~/.config/opencode/plugins
 ```
 
 If `XDG_CONFIG_HOME` is set, use `$XDG_CONFIG_HOME/opencode/plugins/` instead of
-`~/.config/opencode/plugins/`. Restart OpenCode after installing or updating the
-plugin.
+`~/.config/opencode/plugins/`. Stop the background service with
+`opencode service stop` before restarting after an install or update.
+
+The image sets `experimental.subagent_depth` to `2` for nested council calls.
+For a standalone install, set it to at least `2` in `opencode.json` (preserve a
+higher value if you already use one):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "experimental": { "subagent_depth": 2 }
+}
+```
 
 ## Quick Start
 
@@ -119,8 +130,8 @@ enabled for members by default.
 Configuration is merged from least to most specific:
 
 1. Built-in defaults.
-2. `$XDG_CONFIG_HOME/opencode/council.json`, or
-   `~/.config/opencode/council.json` when `XDG_CONFIG_HOME` is unset.
+2. `council.json` beside the active global config, honoring `OPENCODE_CONFIG_DIR`,
+   `OPENCODE_CONFIG`, `XDG_CONFIG_HOME`, then `~/.config/opencode/`.
 3. `.opencode/council.json` in the active worktree.
 
 Each later file can override `members`, `minimum_successful_members`, or
@@ -161,7 +172,8 @@ fixed IDs; the plugin does not silently substitute another model.
 ## How It Works
 
 The plugin creates one hidden, model-pinned agent for each member and a hidden
-orchestrator. The orchestrator is instructed to submit all member Task calls in
+orchestrator. `/council` creates an orchestrator child using the parent session's
+model and location. The orchestrator submits all member `subagent` calls in
 one assistant message so OpenCode can run them concurrently, then wait for the
 results. It retries explicit failures and empty responses once in a second
 parallel round, using fresh sessions. When a response contains useful findings
@@ -170,7 +182,9 @@ original request and the full partial response. It is instructed to continue
 the unfinished work without repeating completed investigation or a known
 problematic tool call. The orchestrator then produces one response from all
 available evidence. Complete members are not retried, and failed retries are
-not attempted again.
+not attempted again. Its final synthesis is posted back to the parent as a
+non-resuming report, without another model call. Interrupting the parent cancels
+an active council child; plugin cleanup cancels active runs and its event subscription.
 
 OpenCode persists the orchestrator and members as nested child sessions.
 `/council-last` locates the newest orchestrator in the current parent session
@@ -189,7 +203,7 @@ as consensus. It is not a completion gate: if fewer members return successfully,
 the orchestrator still responds with the available evidence and identifies that
 the quorum was not met.
 
-Council members can read and search project files and use LSP. When `allow_web`
+Council members can read and search project files. When `allow_web`
 is enabled, they can also fetch and search the web. They cannot edit files, run
 shell commands, delegate tasks, access external directories, or ask separate
 questions. The orchestrator can only delegate to council member agents.
@@ -201,8 +215,9 @@ stuck call fails instead of waiting for user approval. That failure is eligible
 for the orchestrator's single fresh retry. Useful partial results are retained
 for synthesis even if their continuation attempt also fails.
 
-The nested delegation requires a subagent depth of two. The plugin raises
-`subagent_depth` to at least `2` and preserves higher configured values.
+The nested delegation requires `experimental.subagent_depth` of at least `2`.
+It is configured in the image; standalone installations must set it explicitly.
+V2 plugins do not mutate global configuration.
 
 ## Privacy and Cost
 

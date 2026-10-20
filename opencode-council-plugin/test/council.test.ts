@@ -4,497 +4,168 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { CouncilPlugin } from "../plugin/opencode-council"
 
-type GeneratedConfig = Record<string, unknown>
-
-// PPQ catalog IDs, separate from the plugin's provider-prefixed defaults.
-const catalogModelIDs = [
-  "claude-opus-5.5", "gpt-6.1-sol", "google/gemini-4-argon",
-  "qwen/qwen3.8-max-prime", "moonshotai/kimi-k3", "z-ai/glm-5.3-prime", "x-ai/grok-4.7",
-]
-const providerCatalog = {
-  providers: [{ id: "ppq", models: Object.fromEntries(catalogModelIDs.map((id) => [id, { id }])) }],
-}
-
-async function runCouncilCommand(
-  messages: unknown,
-  prompt = "User request for the council:\nreview it",
-  catalog: unknown = providerCatalog,
-): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "opencode-council-command-test-"))
-  const worktree = join(root, "project")
-  const previousConfigHome = process.env.XDG_CONFIG_HOME
-
-  try {
-    await mkdir(join(worktree, ".opencode"), { recursive: true })
-    process.env.XDG_CONFIG_HOME = join(root, "config")
-    const client = {
-      config: {
-        providers: async () => {
-          if (catalog instanceof Error) throw catalog
-          return { data: catalog }
-        },
-      },
-      session: {
-        messages: async () => {
-          if (messages instanceof Error) throw messages
-          return { data: messages }
-        },
-      },
-    }
-    const hooks = await CouncilPlugin({ worktree, client } as never)
-    const parts = [{
-      type: "subtask" as const,
-      agent: "council-orchestrator",
-      description: "",
-      prompt,
-    }]
-    await hooks["command.execute.before"]?.({
-      command: "council",
-      sessionID: "session-1",
-      arguments: "review it",
-    }, { parts } as never)
-    return parts[0].prompt
-  } finally {
-    if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME
-    else process.env.XDG_CONFIG_HOME = previousConfigHome
-    await rm(root, { recursive: true, force: true })
-  }
-}
-
-async function runCouncilLastCommand(fixture: {
-  children: Record<string, unknown>
-  messages: Record<string, unknown>
-  childrenError?: Error
-}, request = "What can we conclude?", inspectMessage?: (message: Record<string, unknown>) => void): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "opencode-council-last-test-"))
-  const worktree = join(root, "project")
-  const previousConfigHome = process.env.XDG_CONFIG_HOME
-
-  try {
-    await mkdir(join(worktree, ".opencode"), { recursive: true })
-    process.env.XDG_CONFIG_HOME = join(root, "config")
-    const client = {
-      session: {
-        children: async ({ path }: { path: { id: string } }) => {
-          if (fixture.childrenError) throw fixture.childrenError
-          return { data: fixture.children[path.id] ?? [] }
-        },
-        messages: async ({ path }: { path: { id: string } }) => ({ data: fixture.messages[path.id] ?? [] }),
-      },
-    }
-    const hooks = await CouncilPlugin({ worktree, client } as never)
-    const parts = [{ type: "text" as const, text: request }]
-    await hooks["command.execute.before"]?.({
-      command: "council-last",
-      sessionID: "main-session",
-      arguments: request,
-    }, { parts } as never)
-    const message: Record<string, unknown> = {}
-    await hooks["chat.message"]?.({ sessionID: "main-session" }, { message, parts } as never)
-    const completed = { text: "I should debug the plugin instead." }
-    await hooks["experimental.text.complete"]?.({
-      sessionID: "main-session",
-      messageID: "assistant-message",
-      partID: "text-part",
-    }, completed)
-    message.completedText = completed.text
-    inspectMessage?.(message)
-    return parts[0].text
-  } finally {
-    if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME
-    else process.env.XDG_CONFIG_HOME = previousConfigHome
-    await rm(root, { recursive: true, force: true })
-  }
-}
-
-function session(id: string, created: number, title = id): unknown {
-  return { id, title, time: { created, updated: created } }
-}
-
-function agentMessages(agent: string, assistant: {
-  text?: string
-  finish?: string
-  completed?: number
-  error?: unknown
-  extraParts?: unknown[]
-} = {}): unknown[] {
-  return [
-    {
-      info: { role: "user", agent, time: { created: 1 } },
-      parts: [{ type: "text", text: "Investigate the design." }],
-    },
-    {
-      info: {
-        role: "assistant",
-        time: { created: 2, ...(assistant.completed ? { completed: assistant.completed } : {}) },
-        ...(assistant.finish ? { finish: assistant.finish } : {}),
-        ...(assistant.error ? { error: assistant.error } : {}),
-      },
-      parts: [
-        ...(assistant.text ? [{ type: "text", text: assistant.text }] : []),
-        ...(assistant.extraParts ?? []),
-      ],
-    },
-  ]
-}
-
-async function configureCouncil(projectConfig?: string, initialConfig: GeneratedConfig = {}, warnings?: string[]): Promise<GeneratedConfig> {
-  const root = await mkdtemp(join(tmpdir(), "opencode-council-test-"))
-  const worktree = join(root, "project")
-  const previousConfigHome = process.env.XDG_CONFIG_HOME
-  const originalWarn = console.warn
-
-  try {
-    await mkdir(join(worktree, ".opencode"), { recursive: true })
-    if (projectConfig !== undefined) {
-      await writeFile(join(worktree, ".opencode", "council.json"), projectConfig)
-    }
-
-    process.env.XDG_CONFIG_HOME = join(root, "config")
-    if (warnings) console.warn = (...values: unknown[]) => warnings.push(values.join(" "))
-
-    const hooks = await CouncilPlugin({ worktree } as never)
-    const config = { ...initialConfig }
-    await hooks.config?.(config as never)
-    return config
-  } finally {
-    console.warn = originalWarn
-    if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME
-    else process.env.XDG_CONFIG_HOME = previousConfigHome
-    await rm(root, { recursive: true, force: true })
-  }
-}
-
-function agents(config: GeneratedConfig): Record<string, Record<string, unknown>> {
-  return config.agent as Record<string, Record<string, unknown>>
-}
-
-test("rejects case-variant member names before agents are registered", async () => {
-  const config = await configureCouncil(JSON.stringify({
-    members: [
-      { name: "Claude", model: "test/claude-a" },
-      { name: "claude", model: "test/claude-b" },
+const member = { name: "test", model: "vendor/nested/model#high" }
+async function harness(options: { config?: unknown; global?: unknown; missing?: boolean; history?: unknown[]; recovery?: boolean; interrupted?: boolean } = {}) {
+  const root = await mkdtemp(join(tmpdir(), "council-v2-"))
+  const oldConfig = process.env.OPENCODE_CONFIG_DIR
+  process.env.OPENCODE_CONFIG_DIR = join(root, "global")
+  await mkdir(join(root, ".opencode"), { recursive: true })
+  await mkdir(join(root, "global"))
+  await writeFile(join(root, ".opencode", "council.json"), JSON.stringify(options.config ?? { members: [member] }))
+  if (options.global) await writeFile(join(root, "global", "council.json"), JSON.stringify(options.global))
+  const agents: Record<string, any> = { other: { system: "keep" } }
+  const commands = new Map<string, any>()
+  const reports: any[] = []
+  const prompts: any[] = []
+  const created: any[] = []
+  const interrupted: string[] = []
+  let aborted = false
+  let deliverEvent: ((event: any) => void) | undefined
+  const contexts: Record<string, any[]> = {
+    parent: options.history ?? [],
+    run: [{ type: "assistant", content: [{ type: "text", text: "Synthesis" }] }],
+    attempt1: [
+      { type: "user", text: "Question" },
+      { type: "assistant", finish: "stop", content: [{ type: "text", text: "Verified conclusion" }, { type: "reasoning", text: "PRIVATE REASONING" }, { type: "tool", name: "read", state: { content: [{ type: "text", text: "PRIVATE TOOL" }] } }] },
     ],
-    minimum_successful_members: 2,
-  }))
-
-  expect(agents(config)["council-member-claude"].model).toStartWith("ppq/claude")
-})
-
-test("caps an inherited quorum when a config replaces the member list", async () => {
-  const config = await configureCouncil(JSON.stringify({
-    members: [{ name: "reviewer", model: "test/reviewer" }],
-  }))
-
-  expect(agents(config)["council-member-reviewer"].model).toBe("test/reviewer")
-  expect(agents(config)["council-orchestrator"].prompt).toContain("at least 1 successful members")
-})
-
-test("rejects an explicitly invalid quorum", async () => {
-  const warnings: string[] = []
-  const config = await configureCouncil(JSON.stringify({
-    members: [{ name: "reviewer", model: "test/reviewer" }],
-    minimum_successful_members: 2,
-  }), {}, warnings)
-
-  expect(agents(config)["council-member-reviewer"]).toBeUndefined()
-  expect(warnings.join("\n")).toContain("expected 1-12 uniquely named members, a valid quorum, and boolean allow_web")
-})
-
-test("rejects null configuration values instead of treating them as absent", async () => {
-  const config = await configureCouncil(JSON.stringify({
-    members: [{ name: "reviewer", model: "test/reviewer" }],
-    minimum_successful_members: null,
-    allow_web: null,
-  }))
-
-  expect(agents(config)["council-member-reviewer"]).toBeUndefined()
-})
-
-test("reports JSON parse errors", async () => {
-  const warnings: string[] = []
-  await configureCouncil("{", {}, warnings)
-
-  expect(warnings.join("\n")).toContain("Could not parse configuration")
-})
-
-test("preserves higher depth settings and grants members read-only access", async () => {
-  const config = await configureCouncil(undefined, { subagent_depth: 5 })
-  const member = agents(config)["council-member-claude"]
-
-  expect(config.subagent_depth).toBe(5)
-  expect(member.permission).toMatchObject({
-    read: "allow",
-    edit: "deny",
-    bash: "deny",
-    task: "deny",
-    doom_loop: "deny",
-  })
-  expect(member.steps).toBe(12)
-  expect(member.maxSteps).toBeUndefined()
-})
-
-test("raises depth to the required nested-task minimum", async () => {
-  const config = await configureCouncil(undefined, { subagent_depth: 1 })
-
-  expect(config.subagent_depth).toBe(2)
-})
-
-test("registers seven default members and allowlists only those members for tasks", async () => {
-  const config = await configureCouncil()
-  const registeredAgents = agents(config)
-  const registered = Object.keys(registeredAgents).filter((name) => name.startsWith("council-member-"))
-  const orchestrator = registeredAgents["council-orchestrator"]
-
-  expect(registered).toHaveLength(7)
-  for (const [member, model] of Object.entries({
-    claude: "ppq/claude-opus-5.5",
-    gpt: "ppq/gpt-6.1-sol",
-    gemini: "ppq/google/gemini-4-argon",
-    qwen: "ppq/qwen/qwen3.8-max-prime",
-    kimi: "ppq/moonshotai/kimi-k3",
-    glm: "ppq/z-ai/glm-5.3-prime",
-    grok: "ppq/x-ai/grok-4.7",
-  })) {
-    expect(registeredAgents[`council-member-${member}`].model).toBe(model)
+    attempt2: [{ type: "assistant", error: { message: "rate limit" }, content: [{ type: "text", text: "Partial findings" }] }],
   }
-  expect(orchestrator.permission).toMatchObject({
-    task: { "*": "deny", "council-member-*": "allow" },
-    doom_loop: "deny",
-  })
-  expect(orchestrator.steps).toBe(11)
-  expect(orchestrator.maxSteps).toBeUndefined()
-  expect(config.command).toMatchObject({
-    council: { agent: "council-orchestrator" },
-    "council-last": { template: "Recover the latest council run.\n$ARGUMENTS" },
-  })
-})
-
-test("retries failures and continues incomplete responses once in fresh parallel calls", async () => {
-  const config = await configureCouncil()
-  const prompt = String(agents(config)["council-orchestrator"].prompt)
-
-  expect(prompt).toContain("For an explicit failure or a response with no usable analysis, retry once with the original task prompt")
-  expect(prompt).toContain("reached its maximum steps, stopped early, or left requested work unfinished")
-  expect(prompt).toContain("both the original task prompt and the member's full prior response")
-  expect(prompt).toContain("avoid repeating completed work or any tool call identified as problematic")
-  expect(prompt).toContain("Ordinary recommendations for future action do not by themselves")
-  expect(prompt).toContain("Submit all needed retries together in ONE assistant message")
-  expect(prompt).toContain("start fresh calls without task_id")
-  expect(prompt).toContain("never retry any member more than once")
-  expect(prompt).toContain("continue even if some members still failed")
-  expect(prompt).toContain("retain useful evidence from an incomplete initial response")
-})
-
-test("rejects unavailable models before reading history or launching member tasks", async () => {
-  const catalog = {
-    providers: [{ id: "ppq", models: Object.fromEntries(
-      catalogModelIDs.filter((id) => id !== "gpt-6.1-sol" && id !== "google/gemini-4-argon")
-        .map((id) => [id, { id }]),
-    ) }],
+  const ctx = {
+    location: { directory: root, project: { directory: root } },
+    agent: { transform: async (fn: Function) => fn({ update: (id: string, update: Function) => { agents[id] ??= {}; update(agents[id]) } }) },
+    command: { transform: async (fn: Function) => fn({ add: (definition: any) => commands.set(definition.name, definition) }) },
+    model: { list: async () => ({ data: options.missing ? [] : [{ providerID: "vendor", id: "nested/model", enabled: true, variants: [{ id: "high" }] }] }) },
+    session: {
+      get: async () => ({ model: { providerID: "parent", id: "model" }, location: { directory: root } }),
+      create: async (input: any) => { created.push(input); return { id: "run" } },
+      prompt: async (input: any) => { prompts.push(input) },
+      wait: async () => { if (options.interrupted) await new Promise<void>((resolve) => { (ctx.session as any).release = resolve }) },
+      interrupt: async ({ sessionID }: any) => { interrupted.push(sessionID); (ctx.session as any).release?.() },
+      context: async ({ sessionID }: any) => contexts[sessionID] ?? [],
+      synthetic: async (input: any) => { reports.push(input) },
+      list: async ({ parentID, cursor }: any) => {
+        if (!options.recovery) return { data: [], cursor: {} }
+        if (parentID === "parent") return { data: [{ id: "run", agent: "council-orchestrator", time: { created: 2 } }], cursor: {} }
+        if (parentID === "run") return { data: [{ id: "attempt1", agent: "council-member-test", outcome: "succeeded", time: { created: 1 } }], cursor: { next: "page2" } }
+        if (cursor === "page2") return { data: [{ id: "attempt2", agent: "council-member-test", outcome: "failed", time: { created: 2 } }], cursor: {} }
+        return { data: [], cursor: {} }
+      },
+    },
+    event: { subscribe: async function* ({ signal }: any) {
+      while (!signal.aborted) {
+        const event = await new Promise((resolve) => { deliverEvent = resolve; signal.addEventListener("abort", () => { aborted = true; resolve(undefined) }, { once: true }) })
+        if (event) yield event
+      }
+    } },
   }
-
-  await expect(runCouncilCommand(new Error("History must not be read"), undefined, catalog))
-    .rejects.toThrow("- gpt: ppq/gpt-6.1-sol\n- gemini: ppq/google/gemini-4-argon")
-})
-
-test("rejects missing providers with actionable configuration guidance", async () => {
-  await expect(runCouncilCommand([], undefined, { providers: [] }))
-    .rejects.toThrow("Choose exact IDs from /models in .opencode/council.json")
-})
-
-test("does not launch council tasks when catalog validation fails", async () => {
-  await expect(runCouncilCommand([], undefined, new Error("Catalog request failed")))
-    .rejects.toThrow("Catalog request failed")
-  await expect(runCouncilCommand([], undefined, null))
-    .rejects.toThrow("OpenCode returned no provider catalog")
-})
-
-test("adds recent visible conversation text to the council request", async () => {
-  const prompt = await runCouncilCommand([
-    {
-      info: { role: "assistant", time: { created: 2 } },
-      parts: [
-        { type: "text", text: "I changed src/auth.ts." },
-        { type: "text", text: "internal summary", synthetic: true },
-        { type: "reasoning", text: "private reasoning" },
-        { type: "text", text: "superseded answer", ignored: true },
-      ],
+  const cleanup = await CouncilPlugin.setup(ctx as never)
+  return {
+    agents, reports, prompts, created, interrupted, contexts,
+    run: (command: string, text = "review it") => commands.get(command).execute({ sessionID: "parent", prompt: { text }, delivery: "queue" }),
+    emit: (event: any) => deliverEvent?.(event),
+    close: async () => {
+      await cleanup?.()
+      expect(aborted).toBe(true)
+      if (oldConfig === undefined) delete process.env.OPENCODE_CONFIG_DIR; else process.env.OPENCODE_CONFIG_DIR = oldConfig
+      await rm(root, { recursive: true, force: true })
     },
-    {
-      info: { role: "user", time: { created: 1 } },
-      parts: [{ type: "text", text: "Fix the authentication bug." }],
-    },
-  ])
+  }
+}
 
-  expect(prompt).toContain("User:\nFix the authentication bug.")
-  expect(prompt).toContain("Assistant:\nI changed src/auth.ts.")
-  expect(prompt.indexOf("Fix the authentication bug.")).toBeLessThan(prompt.indexOf("I changed src/auth.ts."))
-  expect(prompt).toContain("Current council request:\nUser request for the council:\nreview it")
-  expect(prompt).not.toContain("internal summary")
-  expect(prompt).not.toContain("private reasoning")
-  expect(prompt).not.toContain("superseded answer")
-})
-
-test("limits history to the newest twenty messages", async () => {
-  const messages = Array.from({ length: 21 }, (_, index) => ({
-    info: { role: "user", time: { created: index } },
-    parts: [{ type: "text", text: `history-message-${index}` }],
-  }))
-  const prompt = await runCouncilCommand(messages)
-
-  expect(prompt).not.toContain("history-message-0\n")
-  expect(prompt).toContain("history-message-1")
-  expect(prompt).toContain("history-message-20")
-})
-
-test("truncates oversized history while retaining both ends of the newest message", async () => {
-  const text = "start-marker-" + "x".repeat(30_000) + "-end-marker"
-  const prompt = await runCouncilCommand([{
-    info: { role: "assistant", time: { created: 1 } },
-    parts: [{ type: "text", text }],
-  }])
-
-  expect(prompt).toContain("start-marker-")
-  expect(prompt).toContain("[earlier content in this message omitted]")
-  expect(prompt).toContain("-end-marker")
-  expect(prompt.length).toBeLessThan(24_200)
-})
-
-test("keeps the original request when session history cannot be read", async () => {
-  const original = "User request for the council:\nreview it"
-  const warning = console.warn
-  console.warn = () => {}
+test("registers v2 agents with exact model refs, read-only rules and bounded orchestration", async () => {
+  const h = await harness()
   try {
-    expect(await runCouncilCommand(new Error("history unavailable"), original)).toBe(original)
-  } finally {
-    console.warn = warning
-  }
+    const member = h.agents["council-member-test"]
+    expect(member.model).toEqual({ providerID: "vendor", id: "nested/model", variant: "high" })
+    expect(member.steps).toBe(12)
+    expect(member.permissions).toContainEqual({ action: "*", resource: "*", effect: "deny" })
+    expect(member.permissions).toContainEqual({ action: "read", resource: "*", effect: "allow" })
+    const orchestrator = h.agents["council-orchestrator"]
+    expect(orchestrator.permissions).toEqual([{ action: "*", resource: "*", effect: "deny" }, { action: "subagent", resource: "council-member-test", effect: "allow" }])
+    expect(orchestrator.system).toContain("background=false")
+    expect(orchestrator.system).toContain("Never retry complete successful members")
+    expect(orchestrator.system).toContain("full prior response")
+    expect(orchestrator.system).toContain("not a completion gate")
+    expect(h.agents.other.system).toBe("keep")
+  } finally { await h.close() }
 })
 
-test("recovers every member attempt from the latest saved council run", async () => {
-  const prompt = await runCouncilLastCommand({
-    children: {
-      "main-session": [session("old-orchestrator", 1), session("unrelated", 2), session("new-orchestrator", 3)],
-      "old-orchestrator": [session("old-claude", 1)],
-      "new-orchestrator": [session("new-claude", 4), session("new-claude-retry", 5), session("new-gpt", 6)],
-    },
-    messages: {
-      "old-orchestrator": agentMessages("council-orchestrator"),
-      unrelated: agentMessages("general"),
-      "new-orchestrator": agentMessages("council-orchestrator"),
-      "old-claude": agentMessages("council-member-claude", { text: "obsolete finding", finish: "stop" }),
-      "new-claude": agentMessages("council-member-claude", { text: "partial Claude finding" }),
-      "new-claude-retry": agentMessages("council-member-claude", { text: "completed Claude finding", finish: "stop" }),
-      "new-gpt": agentMessages("council-member-gpt", {
-        text: "useful GPT fragment",
-        error: { name: "MessageAbortedError", data: { message: "interrupted" } },
-      }),
-    },
-  }, "Which risks remain?")
-
-  expect(prompt).toContain("Which risks remain?")
-  expect(prompt).toContain('"member": "claude"')
-  expect(prompt).toContain('"attempt": 1')
-  expect(prompt).toContain('"attempt": 2')
-  expect(prompt).toContain('"status": "incomplete"')
-  expect(prompt).toContain('"status": "completed"')
-  expect(prompt).toContain('"status": "error"')
-  expect(prompt).toContain("partial Claude finding")
-  expect(prompt).toContain("completed Claude finding")
-  expect(prompt).toContain("useful GPT fragment")
-  expect(prompt).toContain("MessageAbortedError: interrupted")
-  expect(prompt).not.toContain("obsolete finding")
-})
-
-test("excludes private, synthetic, ignored, tool, and non-council content from recovery", async () => {
-  const prompt = await runCouncilLastCommand({
-    children: {
-      "main-session": [session("orchestrator", 1)],
-      orchestrator: [session("claude", 2), session("explorer", 3)],
-    },
-    messages: {
-      orchestrator: agentMessages("council-orchestrator"),
-      claude: agentMessages("council-member-claude", {
-        text: "public conclusion",
-        finish: "stop",
-        extraParts: [
-          { type: "reasoning", text: "private reasoning" },
-          { type: "text", text: "synthetic note", synthetic: true },
-          { type: "text", text: "ignored note", ignored: true },
-          { type: "tool", state: { status: "completed", output: "raw tool output" } },
-        ],
-      }),
-      explorer: agentMessages("explore", { text: "unrelated analysis", finish: "stop" }),
-    },
-  })
-
-  expect(prompt).toContain("public conclusion")
-  expect(prompt).not.toContain("private reasoning")
-  expect(prompt).not.toContain("synthetic note")
-  expect(prompt).not.toContain("ignored note")
-  expect(prompt).not.toContain("raw tool output")
-  expect(prompt).not.toContain("unrelated analysis")
-})
-
-test("uses a default recovery request when council-last has no arguments", async () => {
-  const prompt = await runCouncilLastCommand({
-    children: { "main-session": [session("orchestrator", 1)], orchestrator: [session("member", 2)] },
-    messages: {
-      orchestrator: agentMessages("council-orchestrator"),
-      member: agentMessages("council-member-claude", { text: "finding", finish: "stop" }),
-    },
-  }, "")
-
-  expect(prompt).toContain("Present each member's recovered conclusions separately")
-})
-
-test("reports when no recoverable council run exists", async () => {
-  let message: Record<string, unknown> = {}
-  const prompt = await runCouncilLastCommand({
-    children: { "main-session": [session("unrelated", 1)] },
-    messages: { unrelated: agentMessages("general", { text: "not council", finish: "stop" }) },
-  }, "What can we conclude?", (value) => { message = value })
-
-  expect(prompt).toBe("No recoverable council member sessions were found in the current session. Command /council-last can only recover a council run from the same parent session.")
-  expect(message.system).toContain("terminal command result")
-  expect(message.tools).toMatchObject({ read: false, edit: false, bash: false, task: false })
-  expect(message.completedText).toBe(prompt)
-})
-
-test("turns session API failures into a safe recovery response", async () => {
-  const warning = console.warn
-  console.warn = () => {}
+test("merges global/project configuration and rejects invalid members without partial application", async () => {
+  const h = await harness({ global: { members: [member], allow_web: false }, config: { members: [{ name: "bad", model: "invalid" }] } })
   try {
-    let message: Record<string, unknown> = {}
-    const prompt = await runCouncilLastCommand({
-      children: {},
-      messages: {},
-      childrenError: new Error("database unavailable"),
-    }, "What can we conclude?", (value) => { message = value })
-    expect(prompt).toBe("Council recovery failed while reading saved sessions: database unavailable")
-    expect(message.system).toContain("Reply with exactly that text and nothing else")
-    expect(message.tools).toMatchObject({ read: false, edit: false, bash: false, task: false })
-    expect(message.completedText).toBe(prompt)
-  } finally {
-    console.warn = warning
-  }
+    expect(h.agents["council-member-test"].permissions).toContainEqual({ action: "webfetch", resource: "*", effect: "deny" })
+    expect(h.agents["council-member-bad"]).toBeUndefined()
+  } finally { await h.close() }
 })
 
-test("bounds oversized recovered transcripts and marks truncation", async () => {
-  const prompt = await runCouncilLastCommand({
-    children: { "main-session": [session("orchestrator", 1)], orchestrator: [session("member", 2)] },
-    messages: {
-      orchestrator: agentMessages("council-orchestrator"),
-      member: agentMessages("council-member-claude", {
-        text: "start-marker-" + "x".repeat(120_000) + "-end-marker",
-        finish: "stop",
-      }),
-    },
-  })
+test("catalog preflight stops unavailable members without creating sessions or calling a model", async () => {
+  const h = await harness({ missing: true })
+  try {
+    await h.run("council")
+    expect(h.created).toHaveLength(0)
+    expect(h.prompts).toHaveLength(0)
+    expect(h.reports[0]).toMatchObject({ resume: false, metadata: { councilReport: true } })
+    expect(h.reports[0].text).toContain("vendor/nested/model#high")
+  } finally { await h.close() }
+})
 
-  expect(prompt).toContain("start-marker-")
-  expect(prompt).toContain("[recovered transcript truncated]")
-  expect(prompt).toContain("-end-marker")
-  expect(prompt.length).toBeLessThan(97_000)
+test("runs an isolated child with the parent model, bounded history, and exact non-model report", async () => {
+  const h = await harness({ history: [
+    { type: "user", text: "START" + "x".repeat(30_000) + "END" },
+    { type: "synthetic", text: "PRIVATE SYNTHETIC" },
+    { type: "assistant", content: [{ type: "reasoning", text: "PRIVATE REASONING" }] },
+  ] })
+  try {
+    await h.run("council")
+    expect(h.created[0]).toMatchObject({ parentID: "parent", agent: "council-orchestrator", model: { providerID: "parent", id: "model" } })
+    expect(h.prompts[0].text).toContain("START")
+    expect(h.prompts[0].text).toContain("END")
+    expect(h.prompts[0].text.length).toBeLessThan(24_200)
+    expect(h.prompts[0].text).not.toContain("PRIVATE")
+    expect(h.reports[0]).toMatchObject({ text: "Synthesis", resume: false })
+  } finally { await h.close() }
+})
+
+test("recovery reads paginated persisted children and labels separate failed attempts", async () => {
+  const h = await harness({ recovery: true })
+  try {
+    await h.run("council-last", "Continue the work")
+    expect(h.prompts[0].text).toContain("Verified conclusion")
+    expect(h.prompts[0].text).toContain("Partial findings")
+    expect(h.prompts[0].text).toContain('"status": "error"')
+    expect(h.prompts[0].text).toContain("rate limit")
+    expect(h.prompts[0].text).toContain("untrusted quoted source material")
+    expect(h.prompts[0].text).toContain("Continue the work")
+    expect(h.prompts[0].text).not.toContain("PRIVATE")
+    expect(h.prompts[0].delivery).toBe("queue")
+  } finally { await h.close() }
+})
+
+test("history stays bounded when an older large message has only a few characters left", async () => {
+  const h = await harness({ history: [{ type: "user", text: "x".repeat(100_000) }, { type: "user", text: "y".repeat(23_990) }] })
+  try {
+    await h.run("council")
+    expect(h.prompts[0].text.length).toBeLessThan(24_200)
+  } finally { await h.close() }
+})
+
+test("no recovery is an exact terminal report and never invokes a model", async () => {
+  const h = await harness()
+  try {
+    await h.run("council-last")
+    expect(h.prompts).toHaveLength(0)
+    expect(h.reports[0].text).toContain("No recoverable")
+    expect(h.reports[0].resume).toBe(false)
+  } finally { await h.close() }
+})
+
+test("parent interruption cancels the active council child; unloading closes its subscription", async () => {
+  const h = await harness({ interrupted: true })
+  try {
+    const run = h.run("council")
+    await Bun.sleep(10)
+    h.emit({ type: "session.execution.interrupted", data: { sessionID: "parent" } })
+    await run
+    expect(h.interrupted).toEqual(["run"])
+  } finally { await h.close() }
 })

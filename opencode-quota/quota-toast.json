@@ -1,0 +1,7 @@
+{
+  "enabledProviders": "auto",
+  "waitForQuotaReset": true,
+  "tuiSidebarPanel": { "enabled": true },
+  "enableToast": false,
+  "tuiCompactStatus": { "enabled": false }
+}

@@ -1,324 +1,167 @@
-/**
- * opencode-ppq.ts — PPQ (ppq.ai) provider plugin for opencode.
- *
- * Baked into the image at ~/.config/opencode/plugins/ and loaded via
- * `"plugin": ["./plugins/opencode-ppq.ts"]` in opencode.json (or auto-discovered
- * from a config dir). It gives the `ppq` provider:
- *
- *   1. `config` — the workhorse. It (a) injects PPQ_API_KEY from env (or a stored
- *      api key from auth.json) into `provider.ppq.options.apiKey`, and (b) fetches
- *      the LIVE PPQ catalog and writes EVERY model into
- *      `config.provider.ppq.models` in opencode's STATIC config-model shape.
- *   2. `auth` — a guided "paste your API key" flow (URL surfaced as text) that
- *      stores the key so it survives across restarts.
- *
- * WHY the config hook (not `provider.models()`): in opencode 1.17.14 the
- * `provider.models()` hook only runs for provider ids that already exist in the
- * built-in models.dev catalog (`database[providerID]` must be truthy). `ppq` is a
- * custom provider, so that hook is skipped entirely. The `config` hook runs before
- * providers are built from config, and config-defined providers/models are fully
- * supported — that's the mechanism the static "canary" config proved works.
- *
- * The catalog is loaded only after a key is available so OpenCode does not show
- * models that cannot yet be used. The public catalog request itself is anonymous.
- */
-
-import type { Plugin } from "@opencode-ai/plugin"
+/** PPQ provider for OpenCode 2. Catalog requests never carry credentials. */
+import { Integration, Model, Plugin, Provider } from "@opencode/plugin"
 import { promises as fs } from "node:fs"
 import * as path from "node:path"
 import * as os from "node:os"
 
 const PPQ_BASE_URL = "https://api.ppq.ai"
-const MODELS_ENDPOINT = `${PPQ_BASE_URL}/v1/models`
-const CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes
+const CACHE_TTL_MS = 10 * 60 * 1000
+const providerID = Provider.ID.make("ppq")
 
-/** Raw model entry as returned by PPQ `/v1/models` (subset we rely on). */
 interface PpqRawModel {
   id: string
-  owned_by?: string
   name?: string
-  created_at?: number // ms epoch
+  created_at?: number
   context_length?: number
-  architecture?: {
-    input_modalities?: string[]
-    output_modalities?: string[]
-  }
+  architecture?: { input_modalities?: string[]; output_modalities?: string[] }
   supported_parameters?: string[]
-  pricing?: {
-    input_per_1M_tokens?: number
-    output_per_1M_tokens?: number
-  }
+  pricing?: { input_per_1M_tokens?: number; output_per_1M_tokens?: number }
 }
 
-/** opencode static config model shape (ProviderConfig.models[id]). */
-type Modality = "text" | "audio" | "image" | "video" | "pdf"
-interface ConfigModel {
-  name: string
-  release_date?: string
-  attachment?: boolean
-  reasoning?: boolean
-  temperature?: boolean
-  tool_call?: boolean
-  cost?: { input: number; output: number; cache_read?: number; cache_write?: number }
-  limit?: { context: number; output: number }
-  modalities?: { input: Modality[]; output: Modality[] }
-  status?: "alpha" | "beta" | "deprecated" | "active"
-}
-
-const dataHome = () => process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share")
-
-/** Resolve the on-disk cache path, honoring XDG_DATA_HOME (persists across rebuilds). */
-function cachePath(): string {
-  return path.join(dataHome(), "opencode", "ppq-models.cache.json")
-}
-
-/** Read the stored PPQ api key from opencode's auth.json (survives restarts). */
-async function storedApiKey(): Promise<string | undefined> {
-  try {
-    const txt = await fs.readFile(path.join(dataHome(), "opencode", "auth.json"), "utf8")
-    const auth = JSON.parse(txt) as Record<string, { type?: string; key?: string }>
-    const entry = auth?.ppq
-    if (entry?.type === "api" && entry.key) return entry.key
-  } catch {
-    /* no stored auth — ignore */
-  }
-  return undefined
-}
-
-interface CacheShape {
-  fetchedAt: number
-  data: PpqRawModel[]
-}
-
-function isRawModel(value: unknown): value is PpqRawModel {
-  if (!value || typeof value !== "object") return false
-  const model = value as PpqRawModel
-  return typeof model.id === "string"
-    && model.id.length > 0
-    && !/\s/.test(model.id)
-    && !["__proto__", "constructor", "prototype"].includes(model.id)
-}
+interface CacheShape { fetchedAt: number; data: PpqRawModel[] }
+const cachePath = () => path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "opencode", "ppq-models.cache.json")
 
 function validCatalog(value: unknown): value is PpqRawModel[] {
-  return Array.isArray(value) && value.every(isRawModel)
-}
-
-function stringList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+  return Array.isArray(value) && value.every((model) => model && typeof model === "object"
+    && typeof model.id === "string" && model.id.length > 0 && !/\s/.test(model.id)
+    && !["__proto__", "constructor", "prototype"].includes(model.id))
 }
 
 async function readCache(): Promise<CacheShape | undefined> {
   try {
-    const txt = await fs.readFile(cachePath(), "utf8")
-    const parsed = JSON.parse(txt) as CacheShape
+    const parsed = JSON.parse(await fs.readFile(cachePath(), "utf8")) as CacheShape
     if (Number.isFinite(parsed?.fetchedAt) && validCatalog(parsed?.data)) return parsed
-  } catch {
-    /* no cache / unreadable — ignore */
-  }
-  return undefined
+  } catch { /* best-effort cache */ }
 }
 
-async function writeCache(data: PpqRawModel[]): Promise<void> {
-  try {
-    const p = cachePath()
-    await fs.mkdir(path.dirname(p), { recursive: true })
-    const tmp = `${p}.${Math.random().toString(36).slice(2)}.tmp`
-    await fs.writeFile(tmp, JSON.stringify({ fetchedAt: Date.now(), data } satisfies CacheShape))
-    await fs.rename(tmp, p)
-  } catch {
-    /* best-effort cache; never fail startup over it */
-  }
-}
-
-/**
- * Fetch the raw PPQ catalog, falling back to (and refreshing) the on-disk cache.
- * The `/v1/models` endpoint is PUBLIC — no API key is required to list models
- * (the key is only needed to actually call a model). Catalog requests deliberately
- * omit credentials.
- */
-async function fetchCatalog(): Promise<PpqRawModel[]> {
+async function fetchCatalog(signal: AbortSignal): Promise<PpqRawModel[]> {
   const cached = await readCache()
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.data
-
   try {
-    // Add a 5-second timeout to avoid hanging opencode startup
-    const res = await fetch(MODELS_ENDPOINT, {
+    const response = await fetch(`${PPQ_BASE_URL}/v1/models`, {
       headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(5000)
+      signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
     })
-    if (!res.ok) throw new Error(`PPQ /v1/models -> ${res.status}`)
-    const json = (await res.json()) as { data?: PpqRawModel[] }
-    const data = json.data
-    if (validCatalog(data) && data.length) {
-      await writeCache(data)
-      return data
-    }
-    console.warn("[ppq] Could not load model catalog: invalid or empty response")
-    if (cached) return cached.data
-    return []
+    if (!response.ok) throw new Error(`PPQ /v1/models -> ${response.status}`)
+    const json = await response.json() as { data?: unknown }
+    if (!validCatalog(json.data) || !json.data.length) throw new Error("invalid or empty response")
+    try {
+      const file = cachePath()
+      await fs.mkdir(path.dirname(file), { recursive: true })
+      const tmp = `${file}.${Math.random().toString(36).slice(2)}.tmp`
+      await fs.writeFile(tmp, JSON.stringify({ fetchedAt: Date.now(), data: json.data }))
+      await fs.rename(tmp, file)
+    } catch { /* cache writes must not fail startup */ }
+    return json.data
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.warn(`[ppq] Could not load model catalog: ${message}`)
-    if (cached) return cached.data
-    return []
+    if (!signal.aborted) console.warn(`[ppq] Could not load model catalog: ${error instanceof Error ? error.message : String(error)}`)
+    return cached?.data ?? []
   }
 }
 
-/** Map a PPQ raw model to opencode's STATIC config model shape (costs = USD/1M). */
-function toConfigModel(m: PpqRawModel): ConfigModel {
-  const params = new Set(stringList(m.supported_parameters).map((p) => p.toLowerCase()))
-  const inputList = stringList(m.architecture?.input_modalities)
-  const outputList = stringList(m.architecture?.output_modalities)
-  const inputs = new Set((inputList.length ? inputList : ["text"]).map((s) => s.toLowerCase()))
-  const outputs = new Set((outputList.length ? outputList : ["text"]).map((s) => s.toLowerCase()))
-
-  const reasoning = params.has("reasoning") || params.has("include_reasoning") || params.has("reasoning_effort")
-  const toolcall = params.has("tools") || params.has("tool_choice")
-  const temperature = params.has("temperature")
-  const attachment = inputs.has("image") || inputs.has("file") || inputs.has("pdf") || inputs.has("video") || inputs.has("audio")
-
-  // PPQ uses "file" to mean PDF/document attachments.
-  const inputMods: Modality[] = []
-  if (inputs.has("text") || inputs.size === 0) inputMods.push("text")
-  if (inputs.has("image")) inputMods.push("image")
-  if (inputs.has("video")) inputMods.push("video")
-  if (inputs.has("audio")) inputMods.push("audio")
-  if (inputs.has("file") || inputs.has("pdf")) inputMods.push("pdf")
-
-  const outputMods: Modality[] = []
-  if (outputs.has("text") || outputs.size === 0) outputMods.push("text")
-  if (outputs.has("image")) outputMods.push("image")
-  if (outputs.has("audio")) outputMods.push("audio")
-  if (outputs.has("video")) outputMods.push("video")
-
-  const inputCost = Number.isFinite(m.pricing?.input_per_1M_tokens) ? Math.max(0, m.pricing!.input_per_1M_tokens!) : 0
-  const outputCost = Number.isFinite(m.pricing?.output_per_1M_tokens) ? Math.max(0, m.pricing!.output_per_1M_tokens!) : 0
-  const context = Number.isFinite(m.context_length) ? Math.max(0, m.context_length!) : 0
-  const releaseDate =
-    typeof m.created_at === "number" && Number.isFinite(m.created_at) && m.created_at > 0
-      ? new Date(m.created_at).toISOString().slice(0, 10)
-      : undefined
-
-  return {
-    name: typeof m.name === "string" && m.name ? m.name : m.id,
-    reasoning,
-    tool_call: toolcall,
-    temperature,
-    attachment,
-    cost: { input: inputCost, output: outputCost, cache_read: 0, cache_write: 0 },
-    limit: { context, output: context > 0 ? Math.min(context, 32000) : 0 },
-    modalities: { input: inputMods, output: outputMods },
-    status: "active",
-    ...(releaseDate ? { release_date: releaseDate } : {}),
-  }
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
 }
 
-export const PpqPlugin: Plugin = async () => {
+function modalities(value: unknown): string[] {
+  const values = strings(value).map((item) => item.toLowerCase() === "file" ? "pdf" : item.toLowerCase())
+  return values.length ? [...new Set(values.filter((item) => ["text", "pdf", "image", "video", "audio"].includes(item)))] : ["text"]
+}
+
+function toModel(raw: PpqRawModel): Model.Info {
+  const model = Model.Info.default(providerID, Model.ID.make(raw.id))
+  const params = strings(raw.supported_parameters).map((item) => item.toLowerCase())
+  const price = (value: number | undefined) => (Number.isFinite(value) ? Math.max(0, value!) : 0) as Model.Cost["input"]
+  const context = Number.isFinite(raw.context_length) ? Math.max(0, Math.floor(raw.context_length!)) : 0
   return {
-    /**
-     * Runs before providers are built from config. We inject the api key (env or
-     * stored) and populate the full live model list into config.provider.ppq.models
-     * using opencode's static config-model shape.
-     */
-    config: async (config) => {
-      const environmentKey = process.env.PPQ_API_KEY
-      const storedKey = environmentKey ? undefined : await storedApiKey()
-
-      config.provider ??= {}
-      const ppq = (config.provider.ppq ??= {})
-      ppq.npm ??= "@ai-sdk/openai-compatible"
-      ppq.name ??= "PayPerQ - ppq.ai"
-      ppq.options ??= {}
-      ppq.options.baseURL ??= PPQ_BASE_URL
-      const configuredKey = typeof ppq.options.apiKey === "string" ? ppq.options.apiKey : undefined
-      const key = environmentKey ?? storedKey ?? configuredKey
-
-      // An environment key is the explicit per-run override; configured and stored
-      // keys remain useful for interactive sessions.
-      if (environmentKey) ppq.options.apiKey = environmentKey
-      else if (!ppq.options.apiKey && storedKey) ppq.options.apiKey = storedKey
-
-      // If we have a key, fetch the full catalog. If we don't have a key, we
-      // DO NOT pollute the model list with 300+ models the user can't use yet.
-      // Instead, we inject exactly one stub model so the provider survives
-      // opencode's "delete providers with zero models" rule, keeping the auth
-      // flow reachable.
-      //
-      // NOTE ON SLASHES: Many PPQ models have IDs like `google/gemini-2.5-pro`.
-      // Prefixed as `ppq/google/gemini-2.5-pro`, they still work fine because
-      // opencode splits on the first slash to parse the provider vs model ID.
-      const models: Record<string, ConfigModel> = {}
-
-      if (key) {
-        const raw = await fetchCatalog()
-        for (const m of raw) {
-          if (!m?.id) continue
-          models[m.id] = toConfigModel(m)
-        }
-      }
-
-      // If we still have zero models (either no key, or the key is present but
-      // fetching the catalog failed offline with no cache), we MUST inject
-      // the stub model so the provider survives and the auth flow is reachable.
-      //
-      // We set tool_call: true so this model isn't filtered out of agent model-pickers
-      // before authentication.
-      if (Object.keys(models).length === 0) {
-        models["sign-in-required"] = {
-          name: key ? "Connect PPQ (Failed to load models)" : "Connect PPQ to load models",
-          tool_call: true,
-          cost: { input: 0, output: 0 },
-          limit: { context: 100000, output: 8192 },
-          modalities: { input: ["text"], output: ["text"] },
-          status: "active",
-        }
-      }
-
-      // Merge (don't clobber) any statically-declared models.
-      ppq.models = { ...models, ...(ppq.models ?? {}) }
+    ...model,
+    name: typeof raw.name === "string" && raw.name ? raw.name : raw.id,
+    capabilities: {
+      tools: params.includes("tools") || params.includes("tool_choice"),
+      temperature: params.includes("temperature"),
+      input: modalities(raw.architecture?.input_modalities),
+      output: modalities(raw.architecture?.output_modalities),
     },
+    cost: [{ input: price(raw.pricing?.input_per_1M_tokens), output: price(raw.pricing?.output_per_1M_tokens), cache: { read: price(0), write: price(0) } }],
+    time: { released: Number.isFinite(raw.created_at) && raw.created_at! > 0 ? raw.created_at! : 0 },
+    limit: { context, output: Math.min(context, 32000) },
+  }
+}
 
-    /**
-     * Guided API-key flow for interactive users.
-     * In opencode 1.17.14, `type: "api"` methods automatically append a built-in
-     * "API key" prompt. If we provide our own `prompts` array here, opencode treats
-     * them as extra metadata prompts, causing a double-prompt (custom, then built-in).
-     * To get a single prompt with instructions, we omit `prompts` and put the
-     * instructions entirely in the `label` (which becomes the dialog title).
-     */
-    auth: {
-      provider: "ppq",
-      loader: async (getAuth) => {
-        const a = (await getAuth()) as { type?: string; key?: string }
-        return a?.type === "api" && a.key ? { apiKey: a.key } : {}
-      },
-      methods: [
-        {
-          type: "api",
-          label: "Open https://ppq.ai/invite/a586e70a -> Add funds -> Get an API key -> paste key",
+export const PpqPlugin = Plugin.define({
+  id: "ppq",
+  async setup(ctx) {
+    const controller = new AbortController()
+    let models: Model.Info[] = []
+    let key: string | undefined = process.env.PPQ_API_KEY || undefined
+    let configuredKey: string | undefined
+
+    // Source edits are synchronous/replayable. Configured definitions win over discovery.
+    const publish: Parameters<typeof ctx.provider.transform>[0] = (editor) => {
+      const previous = editor.get(providerID)
+      const info = previous?.provider ?? Provider.Info.empty(providerID)
+      const inventory = new Map<string, Model.Info>(models.map((model) => [model.id, model]))
+      for (const [id, model] of previous?.models ?? []) inventory.set(id, model)
+      if (!inventory.size) {
+        const stub = Model.Info.default(providerID, Model.ID.make("sign-in-required"))
+        inventory.set(stub.id, { ...stub, name: key ? "Connect PPQ (Failed to load models)" : "Connect PPQ to load models" })
+      }
+      editor.add({
+        info: {
+          ...info,
+          name: previous?.provider.name || "PayPerQ - ppq.ai",
+          integrationID: Integration.ID.make("ppq"),
+          activation: info.activation === "disabled" ? "disabled" : "enabled",
+          package: previous?.provider.package || "@opencode/ai/providers/openai-compatible",
+          settings: { baseURL: PPQ_BASE_URL, ...info.settings, ...(key ? { apiKey: key } : {}) },
         },
-      ],
-    },
+        models: [...inventory.values()],
+      })
+    }
+    let source = await ctx.provider.transform(publish)
+    await ctx.integration.transform((editor) => {
+      editor.method.update({ integrationID: "ppq", method: { type: "key", label: "Open https://ppq.ai/invite/a586e70a → Add funds → Get an API key → paste key" } })
+      editor.method.update({ integrationID: "ppq", method: { type: "env", names: ["PPQ_API_KEY"] } })
+    })
 
-    /**
-     * Preflight check before a chat request fires.
-     * If the user selects the stub model because they haven't authenticated yet,
-     * throw a friendly instructional error rather than a confusing 401.
-     */
-    "chat.params": async (input, output) => {
-      if (input.model.id === "sign-in-required") {
-        throw new Error(
-          "PPQ is not connected yet (or opencode needs a restart after connecting).\n\n" +
-          "1. Run /connect and choose PPQ\n" +
-          "2. Open https://ppq.ai/invite/a586e70a\n" +
-          "3. Add funds\n" +
-          "4. Go to Get an API key and copy a key\n" +
-          "5. Paste the key into OpenCode\n\n" +
-          "If you already connected, please restart OpenCode so it can fetch the model catalog."
-        )
+    const refresh = async () => {
+      const connection = await ctx.integration.connection.active("ppq")
+      const credential = connection ? await ctx.integration.connection.resolve(connection) : undefined
+      key = process.env.PPQ_API_KEY || (credential?.type === "key" ? credential.key : undefined) || configuredKey
+      const catalog = key ? await fetchCatalog(controller.signal) : []
+      if (controller.signal.aborted) return
+      models = catalog.map(toModel)
+      await ctx.provider.reload()
+    }
+    await refresh()
+
+    // Built-in configuration transforms register after user plugins. The batched
+    // startup notification is the first point where their settings are readable.
+    // Remove our overlay before reading so a saved key cannot become a config key.
+    let startup = true
+    void (async () => {
+      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+        if (startup && event.type === "provider.updated") {
+          startup = false
+          await source.dispose()
+          const provider = (await ctx.provider.list()).data.find((provider) => provider.id === providerID)
+          configuredKey = typeof provider?.settings.apiKey === "string" ? provider.settings.apiKey : undefined
+          source = await ctx.provider.transform(publish)
+          await refresh()
+        } else if (event.type === "credential.updated" || event.type === "credential.switched") {
+          await refresh()
+        }
       }
-    },
-  }
-}
+    })().catch((error) => {
+      if (!controller.signal.aborted) console.warn(`[ppq] Credential refresh stopped: ${String(error)}`)
+    })
+    await ctx.session.hook("context", (event) => {
+      if (event.model.providerID === "ppq" && event.model.id === "sign-in-required") {
+        throw new Error("PPQ is not connected or its catalog could not load. Run /connect, choose PPQ, and paste a funded API key from https://ppq.ai/invite/a586e70a. If already connected, check network access and restart OpenCode's service.")
+      }
+    })
+    return () => { controller.abort() }
+  },
+})
 
 export default PpqPlugin

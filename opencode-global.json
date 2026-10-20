@@ -1,32 +1,17 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    "@howaboua/opencode-usage-plugin"
+  "plugins": [
+    "@slkiser/opencode-quota"
   ],
-  "provider": {
-    "ppq": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "PayPerQ - ppq.ai",
-      "options": {
-        "baseURL": "https://api.ppq.ai",
-        "includeUsage": true
-      }
-    }
-  },
-  "permission": {
-    "edit": {
-      "/tmp/*": "allow"
-    },
-    "external_directory": {
-      "/tmp/*": "allow",
-      "~/.gsd/*": "allow",
-      "~/.config/opencode/agents/*": "allow",
-      "~/.config/opencode/skills/*": "allow"
-    },
-    "read": {
-      "~/.gsd/*": "allow",
-      "~/.config/opencode/agents/*": "allow",
-      "~/.config/opencode/skills/*": "allow"
-    }
-  }
+  "experimental": { "subagent_depth": 2 },
+  "permissions": [
+    { "action": "edit", "resource": "/tmp/*", "effect": "allow" },
+    { "action": "external_directory", "resource": "/tmp/*", "effect": "allow" },
+    { "action": "external_directory", "resource": "~/.gsd/*", "effect": "allow" },
+    { "action": "external_directory", "resource": "~/.config/opencode/agents/*", "effect": "allow" },
+    { "action": "external_directory", "resource": "~/.config/opencode/skills/*", "effect": "allow" },
+    { "action": "read", "resource": "~/.gsd/*", "effect": "allow" },
+    { "action": "read", "resource": "~/.config/opencode/agents/*", "effect": "allow" },
+    { "action": "read", "resource": "~/.config/opencode/skills/*", "effect": "allow" }
+  ]
 }

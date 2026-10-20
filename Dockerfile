@@ -49,7 +49,7 @@ RUN mkdir -p /usr/local/share/npm-global \
 USER node
 
 # Global CLIs (kept @latest per project decision).
-RUN npm install -g opencode-ai@latest \
+RUN npm install -g @opencode/cli@latest \
     playwright agent-browser skills \
     @opengsd/gsd-core@latest @opengsd/gsd-pi @opengsd/gsd-browser
 RUN curl -fsSL https://github.com/tinfoilsh/tinfoil-proxy/raw/main/install.sh | sh
@@ -57,6 +57,7 @@ RUN curl -fsSL https://github.com/tinfoilsh/tinfoil-proxy/raw/main/install.sh | 
 # --- Baked opencode config + plugins -----------------------------------------
 # Copied before the gsd-core install so gsd merges into an existing config dir.
 COPY --chown=node:node opencode-global.json /home/node/.config/opencode/opencode.json
+COPY --chown=node:node opencode-quota/quota-toast.json /home/node/.config/opencode/opencode-quota/quota-toast.json
 COPY --chown=node:node opencode-ppq-plugin/plugin/opencode-ppq.ts /home/node/.config/opencode/plugins/
 COPY --chown=node:node opencode-council-plugin/plugin/opencode-council.ts /home/node/.config/opencode/plugins/
 COPY --chown=node:node gsd-defaults.json /home/node/.gsd/defaults.json
@@ -65,13 +66,12 @@ COPY --chown=node:node gsd-defaults.json /home/node/.gsd/defaults.json
 COPY --chown=node:node chromium-wrapper.sh /home/node/.gsd-browser/chromium-wrapper.sh
 RUN chmod +x /home/node/.gsd-browser/chromium-wrapper.sh
 
-# Installation smoke checks. Authenticated workflows are covered by plugin tests,
-# not image construction.
+# Installation smoke checks. Plugin tests use fixtures without paid model calls.
 ARG BUILDPLATFORM
 ARG TARGETPLATFORM
 
 RUN opencode --version \
-    && opencode models ppq \
+    && opencode --version | grep -E '(^|v)2\.' \
     && agent-browser --version \
     && playwright --version \
     && gsd-browser --version \
@@ -96,6 +96,5 @@ RUN gsd-core --opencode --global --portable-hooks \
 
 # agent-browser dogfood skill, installed globally.
 RUN npx skills add vercel-labs/agent-browser --skill agent-browser dogfood --global --yes
-
 
 WORKDIR /workspace

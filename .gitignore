@@ -8,11 +8,6 @@
 # Plugin caches
 *.cache.json
 
-# Local-only experiments
-gsd-council/
-model-curator/
-opencode-usage-plugin/
-
 # OS / editor cruft
 .DS_Store
 

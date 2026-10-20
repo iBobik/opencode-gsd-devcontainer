@@ -5,22 +5,23 @@ COPY package.json ./
 RUN bun install
 COPY plugin/ ./plugin/
 COPY test/ ./test/
-RUN bun test && touch /tests-passed
+RUN bun test && bunx tsc --noEmit --skipLibCheck --moduleResolution bundler --module esnext --target esnext --types bun plugin/opencode-council.ts && touch /tests-passed
 
-FROM ghcr.io/anomalyco/opencode:latest
-
-ENV OPENCODE_CONFIG_CONTENT={} \
-    OPENCODE_DISABLE_AUTOUPDATE=true \
-    OPENCODE_DISABLE_DEFAULT_PLUGINS=true \
-    OPENCODE_DISABLE_LSP_DOWNLOAD=true \
-    OPENCODE_DISABLE_MODELS_FETCH=true
+FROM ghcr.io/anomalyco/opencode:2.1.1
 
 WORKDIR /workspace
 COPY --from=unit-tests /tests-passed /tests-passed
-COPY plugin/opencode-council.ts /root/.config/opencode/plugins/opencode-council.ts
+COPY package.json /workspace/opencode-council-plugin/package.json
+COPY index.ts /workspace/opencode-council-plugin/index.ts
+COPY plugin/ /workspace/opencode-council-plugin/plugin/
+COPY test/opencode.json /workspace/.devcontainer/opencode.json
+ENV OPENCODE_CONFIG=/workspace/.devcontainer/opencode.json
+COPY test/verify.ts /workspace/zz-council-test/index.ts
 
-RUN opencode debug config > /tmp/config.json \
-    && grep -q 'council-orchestrator' /tmp/config.json \
-    && grep -q 'council-member-claude' /tmp/config.json \
-    && grep -q '"council"' /tmp/config.json \
-    && grep -q '"council-last"' /tmp/config.json
+RUN opencode --version | grep -E '(^|v)2\.' \
+    && opencode models > /tmp/models.txt \
+    && opencode plugin list > /tmp/plugins.txt \
+    && cat /tmp/plugins.txt \
+    && test -f /tmp/council-verified \
+    && grep -q 'council' /tmp/plugins.txt \
+    || { cat /root/.local/share/opencode/log/*; exit 1; }

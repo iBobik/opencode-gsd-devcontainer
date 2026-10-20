@@ -46,7 +46,7 @@
 	},
 
 	// Install opencode CLI, then sanity-check the Docker CLI + host daemon.
-	"postCreateCommand": "npm install -g opencode-ai@latest && opencode --version && docker buildx version && docker info --format 'Docker daemon: {{.Name}} ({{.ServerVersion}})'",
+	"postCreateCommand": "npm install -g @opencode/cli && opencode --version | grep -E '(^|v)2\\.' && docker buildx version && docker info --format 'Docker daemon: {{.Name}} ({{.ServerVersion}})'",
 
 	"customizations": {
 		"vscode": {

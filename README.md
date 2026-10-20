@@ -1,6 +1,6 @@
 # OpenCode GSD Devcontainer
 
-A VS Code development container for running [OpenCode](https://opencode.ai) with
+A VS Code development container for running [OpenCode 2](https://opencode.ai/v2/docs/) with
 [GSD](https://opengsd.net), multi-provider model routing, a read-only model
 council, usage reporting, and browser automation.
 
@@ -17,7 +17,7 @@ when you need reproducible builds.
 | --- | --- |
 | [OpenCode](https://opencode.ai) | Provider-agnostic coding-agent runtime |
 | [PPQ provider plugin](opencode-ppq-plugin/README.md) | Adds the live [PPQ](https://ppq.ai) model catalog and authentication |
-| [OpenCode usage plugin](https://www.npmjs.com/package/@howaboua/opencode-usage-plugin) | Reports token usage and estimated model cost |
+| [OpenCode Quota](https://www.npmjs.com/package/@slkiser/opencode-quota) | Quota sidebar, token/cost reports, and retry after quota resets |
 | [Council plugin](opencode-council-plugin/README.md) | Asks multiple model families to analyze the same request and synthesizes their responses |
 | [GSD](https://opengsd.net) | Autonomous planning, implementation, and verification |
 | Browser tooling | Chromium, Playwright, agent-browser, and gsd-browser |
@@ -55,10 +55,17 @@ The PPQ plugin loads the current PPQ catalog after authentication and caches it
 for startup resilience. See the [PPQ plugin guide](opencode-ppq-plugin/README.md)
 for installation, credential precedence, and failure behavior.
 
-### Usage Reporting
+### Quota and Usage Reporting
 
-The included [`@howaboua/opencode-usage-plugin`](https://www.npmjs.com/package/@howaboua/opencode-usage-plugin)
-reports token usage and estimated cost for OpenCode sessions.
+The included [`@slkiser/opencode-quota`](https://www.npmjs.com/package/@slkiser/opencode-quota)
+provides a quota sidebar and `/quota`, `/quota_status`, `/tokens_session`, and
+other token/cost reports. Provider detection is automatic. When a provider hits
+a limit and its quota window is exhausted, **wait-for-reset is enabled** so
+OpenCode can retry after the reset. PPQ-specific balance reporting is not configured.
+
+Settings are baked into
+`~/.config/opencode/opencode-quota/quota-toast.json`. The sidebar is enabled;
+automatic popup toasts and the compact status line are disabled.
 
 ### GSD Model Profiles Removed
 
@@ -77,6 +84,23 @@ uncertainty.
 The default council uses seven PPQ models. Each member call can add latency and
 incur model cost. See the [council guide](opencode-council-plugin/README.md) to
 change its members, quorum, or web access.
+
+## Upgrading from OpenCode 1
+
+Rebuild the devcontainer to install `@opencode/cli` (OpenCode 2) and the migrated
+plugins. The development environment's setup installs the v2 CLI on rebuild.
+GSD-Core's upstream v2 adapter is included;
+the removed GSD-models plugin is not restored.
+
+Back up `.devcontainer/data/` before first opening existing v1 data with v2.
+Both generations share data locations, and v1 cannot necessarily reopen a v2-used
+database. V2 owns provider connections; reconnect with `/connect` if an old login
+is not available. The PPQ plugin uses v2 integration APIs rather than reading
+`auth.json` directly.
+
+After changing configuration, plugins, or environment variables, quit OpenCode,
+run `opencode service stop`, then start `opencode` again. A running background
+service retains its loaded configuration and environment.
 
 ## Browser Security
 
@@ -101,6 +125,14 @@ Run the plugin test suites from the repository root:
 docker build -f opencode-ppq-plugin/test/Dockerfile opencode-ppq-plugin
 docker build -f opencode-council-plugin/test/Dockerfile opencode-council-plugin
 ```
+
+Each plugin build runs behavioral tests, typechecks its implementation, and loads
+it in the official OpenCode 2 image. The full-image build checks CLI installation
+and GSD assets, but does not exercise the combined plugin configuration.
+
+For an authenticated check after rebuilding: connect PPQ, confirm its live models
+in `/models`, run `/council` and `/council-last` in the same conversation, open
+`/gsd-help`, and inspect `/quota_status` and `/tokens_session` after a model request.
 
 ## Publishing
 

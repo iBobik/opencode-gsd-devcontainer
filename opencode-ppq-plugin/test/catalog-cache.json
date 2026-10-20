@@ -1,0 +1,12 @@
+{
+  "fetchedAt": 4102444800000,
+  "data": [
+    {
+      "id": "test/catalog-model",
+      "name": "Catalog test model",
+      "context_length": 32000,
+      "supported_parameters": ["tools", "temperature"],
+      "pricing": { "input_per_1M_tokens": 1, "output_per_1M_tokens": 2 }
+    }
+  ]
+}
