@@ -15,7 +15,7 @@ const DEFAULT_CONFIG: CouncilConfig = {
     { name: "gpt", model: "ppq/gpt-6.1-sol" },
     { name: "gemini", model: "ppq/google/gemini-4-argon" },
     { name: "qwen", model: "ppq/qwen/qwen3.8-max-prime" },
-    { name: "kimi", model: "ppq/moonshotai/kimi-k3" },
+    { name: "kimi", model: "ppq/moonshotai/kimi-k3.1-pro" },
     { name: "glm", model: "ppq/z-ai/glm-5.3-prime" },
     { name: "grok", model: "ppq/x-ai/grok-4.7" },
   ],

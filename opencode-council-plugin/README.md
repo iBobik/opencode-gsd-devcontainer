@@ -118,7 +118,7 @@ The built-in council uses these current PPQ model IDs:
 | GPT | `ppq/gpt-6.1-sol` |
 | Gemini | `ppq/google/gemini-4-argon` |
 | Qwen | `ppq/qwen/qwen3.8-max-prime` |
-| Kimi | `ppq/moonshotai/kimi-k3` |
+| Kimi | `ppq/moonshotai/kimi-k3.1-pro` |
 | GLM | `ppq/z-ai/glm-5.3-prime` |
 | Grok | `ppq/x-ai/grok-4.7` |
 
