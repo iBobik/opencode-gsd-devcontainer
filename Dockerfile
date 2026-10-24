@@ -51,7 +51,8 @@ USER node
 # Global CLIs (kept @latest per project decision).
 RUN npm install -g @opencode/cli@latest \
     playwright agent-browser skills \
-    @opengsd/gsd-core@latest @opengsd/gsd-pi @opengsd/gsd-browser
+    @opengsd/gsd-core@latest @opengsd/gsd-pi @opengsd/gsd-browser \
+    && npm cache clean --force
 RUN curl -fsSL https://github.com/tinfoilsh/tinfoil-proxy/raw/main/install.sh | sh
 
 # --- Baked opencode config + plugins -----------------------------------------
@@ -59,7 +60,8 @@ RUN curl -fsSL https://github.com/tinfoilsh/tinfoil-proxy/raw/main/install.sh | 
 COPY --chown=node:node opencode-global.json /home/node/.config/opencode/opencode.json
 COPY --chown=node:node opencode-quota/quota-toast.json /home/node/.config/opencode/opencode-quota/quota-toast.json
 COPY --chown=node:node opencode-ppq-plugin/plugin/opencode-ppq.ts /home/node/.config/opencode/plugins/
-COPY --chown=node:node opencode-council-plugin/plugin/opencode-council.ts /home/node/.config/opencode/plugins/
+COPY --chown=node:node opencode-council-plugin/package.json opencode-council-plugin/index.ts opencode-council-plugin/tui.ts /home/node/.config/opencode/plugins/council/
+COPY --chown=node:node opencode-council-plugin/plugin/ /home/node/.config/opencode/plugins/council/plugin/
 COPY --chown=node:node gsd-defaults.json /home/node/.gsd/defaults.json
 
 # Chromium wrapper for gsd-browser (see GSD_BROWSER_BROWSER_PATH above).
