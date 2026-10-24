@@ -33,13 +33,36 @@ correct answer.
   optionally access the web, but cannot modify files or run shell commands.
 - **Parallel multi-model analysis:** Model-pinned members work concurrently and
   do not see or conform to one another's responses.
+- **Visible progress and results:** A compact status line above the composer
+  shows member counts, retries, and synthesis progress. It disappears when the
+  report is delivered. If delivery is unconfirmed, a recovery notice remains.
+  The report appears once as a conversation notice, without waking
+  the main model. Your next reply gives the main model both the report and your
+  reply. OpenCode 2.1.1 renders synthetic notices as plain text, not Markdown;
+  its public plugin API cannot insert an ordinary assistant message or native
+  inline subagent activity. Those presentation improvements require upstream
+  support; the plugin does not make an extra model call to repeat the report.
+- **Summarized session naming:** When council starts an empty, untitled
+  conversation, it generates a short title from the council prompt using
+  OpenCode's configured `title` agent instructions and model (the parent model
+  when no title model is configured). This uses OpenCode's public, tool-free
+  text-generation API; V2.1.1 does not expose its automatic title trigger to
+  plugins. A prompt-based title is shown first and kept if generation fails or
+  exceeds a local ten-second deadline. This stops waiting even when the V2.1.1
+  adapter ignores request signals; the underlying provider request may continue
+  and incur charges. Follow-ups, later councils, and manual renames do not
+  replace the title. Titles are capped at 100 characters.
 - **Evidence-based synthesis:** The orchestrator weighs evidence over majority
   count and reports consensus, disagreements, unique observations, uncertainty,
   and failed members.
 - **Bounded retries:** Failed, empty, or incomplete member responses receive at
   most one fresh retry while useful partial findings remain available for the
   final synthesis.
-- **Recovery after interruption:** `/council-last` reads the persisted member
+- **Saved reports:** `/council-last` without arguments shows the exact saved
+  successfully completed synthesis without invoking a model, including after
+  report delivery failed. Interrupted or failed partial output does not bypass
+  member-response recovery.
+- **Recovery after interruption:** `/council-last <request>` reads the persisted member
   sessions from the latest council run in the current conversation. It makes
   completed, partial, and failed attempts available to the current main agent,
   including after OpenCode has restarted.
@@ -59,19 +82,22 @@ For one project:
 
 ```sh
 mkdir -p /path/to/project/.opencode/plugins
-cp opencode-council-plugin/plugin/opencode-council.ts /path/to/project/.opencode/plugins/
+cp -R opencode-council-plugin /path/to/project/.opencode/plugins/council
 ```
 
 For all projects:
 
 ```sh
 mkdir -p ~/.config/opencode/plugins
-cp opencode-council-plugin/plugin/opencode-council.ts ~/.config/opencode/plugins/
+cp -R opencode-council-plugin ~/.config/opencode/plugins/council
 ```
 
 If `XDG_CONFIG_HOME` is set, use `$XDG_CONFIG_HOME/opencode/plugins/` instead of
-`~/.config/opencode/plugins/`. Stop the background service with
-`opencode service stop` before restarting after an install or update.
+`~/.config/opencode/plugins/`. Run `/reload` after installing or updating.
+When upgrading a single-file installation, remove the old `opencode-council.ts`
+plugin after installing the directory to avoid loading two copies. Keep the root
+`tui.ts` file: local directory plugins resolve that entrypoint directly, even
+when `package.json` also exports `./tui`.
 
 The image sets `experimental.subagent_depth` to `2` for nested council calls.
 For a standalone install, set it to at least `2` in `opencode.json` (preserve a
@@ -99,9 +125,9 @@ If the council was interrupted, reopen the same parent conversation and run:
 /council-last
 ```
 
-This presents the recovered conclusions separately and synthesizes them. An
-argument asks the current main agent a specific question or tells it how to
-continue:
+This shows the saved synthesis without a model call when one is available;
+otherwise it recovers member responses using the main agent. An argument always
+asks the current main agent a specific question or tells it how to continue:
 
 ```text
 /council-last Which risks were supported by evidence from at least two members?
@@ -134,17 +160,18 @@ Configuration is merged from least to most specific:
    `OPENCODE_CONFIG`, `XDG_CONFIG_HOME`, then `~/.config/opencode/`.
 3. `.opencode/council.json` in the active worktree.
 
-Each later file can override `members`, `minimum_successful_members`, or
-`allow_web`:
+Each later file can override `members`, `minimum_successful_members`,
+`allow_web`, or `member_steps`:
 
 ```json
 {
   "members": [
-    { "name": "claude", "model": "ppq/claude-opus-5.5" },
+    { "name": "claude", "model": "ppq/claude-opus-5.5", "steps": 40 },
     { "name": "gemini", "model": "ppq/google/gemini-4-argon" }
   ],
   "minimum_successful_members": 2,
-  "allow_web": false
+  "allow_web": false,
+  "member_steps": 30
 }
 ```
 
@@ -157,6 +184,9 @@ Configuration rules:
 - `minimum_successful_members` must be an integer from `1` through the member
   count.
 - `allow_web` must be `true` or `false`.
+- `member_steps` defaults to `30` and must be an integer from `1` through `100`.
+  A member's optional `steps` uses the same range and overrides `member_steps`
+  for that member. The budget applies separately to each initial or retry attempt.
 
 When `members` changes without an explicit minimum, the inherited minimum is
 capped at the new member count. An invalid file is ignored and a warning is
@@ -184,10 +214,43 @@ problematic tool call. The orchestrator then produces one response from all
 available evidence. Complete members are not retried, and failed retries are
 not attempted again. Its final synthesis is posted back to the parent as a
 non-resuming report, without another model call. Interrupting the parent cancels
-an active council child; plugin cleanup cancels active runs and its event subscription.
+council startup as well as active children; plugin cleanup cancels pending and
+active runs and its event subscription. If interruption races child creation,
+the returned child is interrupted before it receives a prompt.
+
+V2 admits that report to the session inbox for the next model turn. A separate
+CLI entrypoint displays a compact live status line above the composer, not a
+second copy of the report. A terminal recovery notice remains when delivery is
+unconfirmed. Display state is persisted best-effort per invocation; storage
+failures do not block startup or report admission. Each invocation owns a separate
+record, and readers select the newest by immutable creation order, so delayed
+heartbeats, completion, cleanup, or recovery from another instance cannot hide a
+newer run. This does not enforce cross-instance single-run exclusivity.
+Recovery-only notices are stored separately and shown only when no invocation
+display exists; even a notice written during delayed startup cannot outrank a run.
+Progress polls actual member sessions once per second while mounted; it does not call a
+model. Polls target the session's location and read durable display state plus
+the actual orchestrator outcome, not a location-specific plugin instance's
+in-memory ownership map. A different instance must not label an active run as
+stopped or serve a cached report from an earlier run.
+Clients without the CLI entrypoint do not show this live status line; the
+synthetic report also carries its full text as its visible description rather
+than an opaque “Council report” label. Its model-visible text remains available
+on the next turn.
+
+Deleting a conversation removes its display state. Status reads verify the
+parent still exists before returning stored text, and plugin loading scans
+saved displays to remove orphaned entries. Transient lookup errors do not erase
+saved data. All running records have a refreshed 30-second lease, including after
+the orchestrator ID is saved. An expired lease stops displaying running even if
+the orchestrator has no outcome; it does not prove every child has stopped.
+Cleanup saves interruption independently of conversation-message delivery.
+Repeated `/council` commands and `/council-last` during an active local run
+return an explicit notice without replacing its progress. Recovery errors and
+missing responses are labeled separately from successful completion.
 
 OpenCode persists the orchestrator and members as nested child sessions.
-`/council-last` locates the newest orchestrator in the current parent session
+When reconstructing member responses, `/council-last` locates the newest orchestrator in the current parent session
 that has council member children, then reads every member attempt, including
 fresh retry sessions. No plugin-specific recovery state is required, so saved
 responses remain recoverable after a process restart. Visible user and assistant
@@ -208,7 +271,9 @@ is enabled, they can also fetch and search the web. They cannot edit files, run
 shell commands, delegate tasks, access external directories, or ask separate
 questions. The orchestrator can only delegate to council member agents.
 
-Members are limited to 12 agentic iterations. The orchestrator also has a
+Members default to 30 agentic iterations, configurable with `member_steps` or
+per-member `steps`. These are finite safety ceilings, not loop detection;
+increasing them can increase latency and cost. The orchestrator also has a
 bounded iteration budget based on the council size. OpenCode's repeated
 identical-tool-call guard is denied automatically for both agent types, so a
 stuck call fails instead of waiting for user approval. That failure is eligible
@@ -234,6 +299,11 @@ provider. This independent evidence gathering is intentional: members should
 not be constrained to identical source material because investigative diversity
 is part of the council's value.
 
+Starting council in an empty, untitled conversation adds one tool-free title
+generation request containing the council prompt. It uses the configured title
+model, or the parent model when none is configured. Existing titled
+conversations do not incur this request.
+
 One command can invoke every configured member plus the orchestrator, and a
 retry can add another provider request for an affected member. Disable web
 access or choose fewer members when privacy, latency, or cost is more important
@@ -248,6 +318,9 @@ than model diversity.
   and restart after correcting the file.
 - Responses are too slow or expensive: configure fewer members and lower the
   minimum accordingly.
+- A live status line stops updating: check the OpenCode log for
+  `[council-ui] Could not refresh status`. Session activity must not reset the
+  status; only switching conversations clears its local display.
 - A member repeatedly calls the same tool: OpenCode stops the repeated call and
   the orchestrator retries that member once in a fresh session.
 - `/council-last` finds no responses: reopen the parent conversation where the
@@ -263,5 +336,23 @@ docker build -f opencode-council-plugin/test/Dockerfile opencode-council-plugin
 ```
 
 The Docker build tests configuration, permissions, step limits, retry policy,
-agent registration, and plugin loading with the official OpenCode image. It
-does not call live models or guarantee provider-side concurrency.
+agent registration, local server/TUI entrypoint resolution, and plugin loading
+with the official OpenCode image. A reactivity regression checks that member
+activity cannot clear the display. A real-terminal smoke test uses a deterministic
+loopback model and two actual member sessions to verify on-screen running and
+completion counts, synthesis, the finished summary, and a second run in the same
+conversation, then moves the session and checks another run in a different
+location. Cross-instance tests reproduce the false “no longer running” report
+and check that saved member counts and newer reports are read correctly.
+The terminal test also checks that the next model request includes both the
+council report and the user reply, and that the parent is named from the first
+council prompt before the follow-up and keeps that title on subsequent runs.
+It does not call live models or guarantee provider-side concurrency.
+Regression tests also exercise ignored title signals and real local deadlines,
+startup cancellation races, deletion and orphan cleanup, storage and delivery
+failures, expired startup and execution leases, duplicate commands, and recovery
+labels. Delayed two-instance writes cover heartbeat, completion, cleanup, and
+recovery races; failed delivery retains exact synthesis for explicit retrieval.
+The terminal test checks that completion removes the live status line, that
+the report is not duplicated in a composer panel, and that deleting the parent
+conversation makes its report inaccessible through the display RPC.
