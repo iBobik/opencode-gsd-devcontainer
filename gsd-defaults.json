@@ -7,7 +7,7 @@
     "runtime_tiers": {
       "opencode": {
         "opus": { "model": "openai/gpt-6.1-sol" },
-        "sonnet": { "model": "openai/gpt-5.6-terra" },
+        "sonnet": { "model": "openai/gpt-6.1-terra" },
         "haiku": { "model": "openai/gpt-6-luna" }
       }
     }
