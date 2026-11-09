@@ -16,11 +16,11 @@ const DEFAULT_CONFIG: CouncilConfig = {
   members: [
     { name: "claude", model: "ppq/claude-opus-5.5" },
     { name: "gpt", model: "ppq/gpt-6.1-sol" },
-    { name: "gemini", model: "ppq/google/gemini-4-argon" },
+    { name: "gemini", model: "ppq/gemini-4-argon" },
     { name: "qwen", model: "ppq/qwen/qwen3.8-max-prime" },
     { name: "kimi", model: "ppq/moonshotai/kimi-k3.1-pro" },
     { name: "glm", model: "ppq/z-ai/glm-5.3-prime" },
-    { name: "grok", model: "ppq/x-ai/grok-4.7" },
+    { name: "grok", model: "ppq/grok-4.7" },
   ],
   minimum_successful_members: 2,
   allow_web: true,
